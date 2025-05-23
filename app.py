@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import io
 import re
 from streamlit_option_menu import option_menu
+import os
 
 from utils.kakao_parser import KakaoParser
 from utils.gpt_analyzer import GPTAnalyzer
@@ -43,71 +44,288 @@ db_manager = DatabaseManager()
 with st.sidebar:
     selected = option_menu(
         "메뉴",
-        ["파일 업로드", "데이터 필터링", "GPT 분석", "시각화", "리포트 생성", "데이터 관리", "설정"],
-        icons=['upload', 'funnel', 'robot', 'bar-chart', 'file-earmark-pdf', 'database', 'gear'],
+        ["파일 업로드", "채팅방 히스토리", "데이터 필터링", "GPT 분석", "시각화", "리포트 생성", "데이터 관리", "설정"],
+        icons=['upload', 'chat-dots', 'funnel', 'robot', 'bar-chart', 'file-earmark-pdf', 'database', 'gear'],
         menu_icon="cast",
         default_index=0,
     )
 
-# 파일 업로드 섹션
+# 파일 업로드 섹션 (개선)
 if selected == "파일 업로드":
     st.header("📁 카카오톡 채팅 파일 업로드")
     
-    uploaded_file = st.file_uploader(
-        "카카오톡 채팅 내역 파일을 업로드하세요 (CSV 또는 TXT)",
-        type=['csv', 'txt'],
-        help="카카오톡에서 내보낸 채팅 내역 파일을 업로드하세요"
-    )
+    # 탭으로 구분
+    tab1, tab2 = st.tabs(["🆕 새 파일 업로드", "📚 기존 채팅방에 추가"])
     
-    if uploaded_file is not None:
-        try:
-            with st.spinner("파일을 분석하는 중..."):
-                # 파일 파싱
-                parser = KakaoParser()
-                chat_data = parser.parse_file(uploaded_file)
-                st.session_state.chat_data = chat_data
-                
-            st.success(f"✅ 파일 업로드 완료! {len(chat_data)} 개의 메시지를 불러왔습니다.")
-            
-            # 데이터베이스에 저장 옵션
-            st.subheader("💾 데이터베이스에 저장")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                session_name = st.text_input("세션 이름", value=f"분석_{datetime.now().strftime('%Y%m%d_%H%M')}")
-            with col2:
-                description = st.text_input("설명 (선택사항)", placeholder="예: 12월 주식 토론방 분석")
-            
-            if st.button("💾 데이터베이스에 저장"):
-                try:
-                    session_id = db_manager.save_analysis_session(
-                        session_name, 
-                        chat_data, 
-                        uploaded_file.name,
-                        description
+    with tab1:
+        st.subheader("새로운 채팅 파일 업로드")
+        uploaded_file = st.file_uploader(
+            "카카오톡 채팅 내역 파일을 업로드하세요 (CSV 또는 TXT)",
+            type=['csv', 'txt'],
+            help="카카오톡에서 내보낸 채팅 내역 파일을 업로드하세요",
+            key="new_file"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                with st.spinner("파일을 분석하는 중..."):
+                    # 파일 저장
+                    file_path = f"temp_{uploaded_file.name}"
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # 파일 파싱
+                    parser = KakaoParser()
+                    chat_data = parser.parse_file(uploaded_file)
+                    st.session_state.chat_data = chat_data
+                    
+                    # 데이터베이스에 저장 (자동)
+                    file_id, room_id, new_messages = db_manager.save_chat_file(
+                        file_path, uploaded_file.name, chat_data
                     )
-                    st.session_state.current_session_id = session_id
-                    st.success(f"✅ 세션이 저장되었습니다! (ID: {session_id})")
-                except Exception as e:
-                    st.error(f"❌ 저장 중 오류: {str(e)}")
+                    
+                st.success(f"✅ 파일 업로드 완료!")
+                
+                if new_messages == 0:
+                    st.info("ℹ️ 이 파일은 이미 데이터베이스에 존재합니다.")
+                else:
+                    st.success(f"🆕 {new_messages}개의 새로운 메시지가 추가되었습니다!")
+                
+                # 데이터 미리보기
+                st.subheader("📋 데이터 미리보기")
+                st.dataframe(chat_data.head(10))
+                
+                # 기본 통계
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("총 메시지 수", len(chat_data))
+                with col2:
+                    st.metric("참여자 수", chat_data['user'].nunique())
+                with col3:
+                    st.metric("기간", f"{(chat_data['datetime'].max() - chat_data['datetime'].min()).days} 일")
+                with col4:
+                    st.metric("평균 메시지 길이", f"{chat_data['message'].str.len().mean():.1f} 자")
+                    
+                # 정리
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    
+            except Exception as e:
+                st.error(f"❌ 파일 처리 중 오류가 발생했습니다: {str(e)}")
+    
+    with tab2:
+        st.subheader("기존 채팅방에 파일 추가")
+        
+        # 기존 채팅방 목록 조회
+        rooms_df = db_manager.get_all_rooms()
+        
+        if not rooms_df.empty:
+            selected_room = st.selectbox(
+                "채팅방 선택",
+                options=rooms_df['id'].tolist(),
+                format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]} ({rooms_df[rooms_df['id']==x]['total_messages'].iloc[0]}개 메시지)"
+            )
             
-            # 데이터 미리보기
-            st.subheader("📋 데이터 미리보기")
-            st.dataframe(chat_data.head(10))
+            uploaded_file_add = st.file_uploader(
+                "추가할 채팅 파일 선택",
+                type=['csv', 'txt'],
+                key="add_file"
+            )
+            
+            if uploaded_file_add is not None and st.button("📂 채팅방에 추가"):
+                try:
+                    with st.spinner("파일을 추가하는 중..."):
+                        # 파일 저장
+                        file_path = f"temp_{uploaded_file_add.name}"
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file_add.getbuffer())
+                        
+                        # 파일 파싱
+                        parser = KakaoParser()
+                        new_chat_data = parser.parse_file(uploaded_file_add)
+                        
+                        # 기존 채팅방에 추가
+                        file_id, new_messages = db_manager.update_room_with_new_file(
+                            selected_room, file_path, uploaded_file_add.name, new_chat_data
+                        )
+                        
+                    if new_messages > 0:
+                        st.success(f"✅ {new_messages}개의 새로운 메시지가 추가되었습니다!")
+                    else:
+                        st.info("ℹ️ 중복된 메시지입니다. 새로운 메시지가 없습니다.")
+                    
+                    # 정리
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        
+                except Exception as e:
+                    st.error(f"❌ 파일 추가 중 오류: {str(e)}")
+        else:
+            st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 새 파일을 업로드해주세요.")
+
+# 채팅방 히스토리 섹션 (새로 추가)
+elif selected == "채팅방 히스토리":
+    st.header("💬 채팅방 히스토리 관리")
+    
+    # 모든 채팅방 조회
+    rooms_df = db_manager.get_all_rooms()
+    
+    if rooms_df.empty:
+        st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 파일을 업로드해주세요.")
+    else:
+        st.subheader("📋 채팅방 목록")
+        
+        # 채팅방 목록 표시
+        for _, room in rooms_df.iterrows():
+            with st.expander(f"💬 {room['room_name']} ({room['total_messages']}개 메시지)"):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.write(f"**참여자:** {len(room['participants_list'])}명")
+                    if len(room['participants_list']) <= 5:
+                        st.write(f"👥 {', '.join(room['participants_list'])}")
+                
+                with col2:
+                    st.write(f"**파일 수:** {room['file_count']}개")
+                    st.write(f"**총 메시지:** {room['total_messages']}개")
+                
+                with col3:
+                    if room['first_message']:
+                        st.write(f"**시작:** {room['first_message'][:10]}")
+                    if room['last_message']:
+                        st.write(f"**마지막:** {room['last_message'][:10]}")
+                
+                # 액션 버튼들
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    if st.button(f"📊 통계 보기", key=f"stats_{room['id']}"):
+                        st.session_state.selected_room_stats = room['id']
+                
+                with col2:
+                    if st.button(f"📖 히스토리 보기", key=f"history_{room['id']}"):
+                        st.session_state.selected_room_history = room['id']
+                
+                with col3:
+                    if st.button(f"💾 데이터 내보내기", key=f"export_{room['id']}"):
+                        # 채팅방 데이터 가져오기
+                        room_data = db_manager.get_room_history(room['id'])
+                        st.session_state.chat_data = room_data
+                        st.success("✅ 데이터가 로드되었습니다. 다른 섹션에서 분석하실 수 있습니다.")
+                
+                with col4:
+                    if st.button(f"🗑️ 삭제", key=f"delete_{room['id']}", type="secondary"):
+                        st.session_state.room_to_delete = room['id']
+        
+        # 선택된 채팅방 통계 표시
+        if 'selected_room_stats' in st.session_state:
+            st.subheader(f"📊 채팅방 통계")
+            room_stats = db_manager.get_room_statistics(st.session_state.selected_room_stats)
             
             # 기본 통계
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("총 메시지 수", len(chat_data))
+                st.metric("총 메시지", room_stats['basic']['total_messages'])
             with col2:
-                st.metric("참여자 수", chat_data['user'].nunique())
+                st.metric("참여자 수", room_stats['basic']['participant_count'])
             with col3:
-                st.metric("기간", f"{(chat_data['datetime'].max() - chat_data['datetime'].min()).days} 일")
+                if room_stats['basic']['first_message']:
+                    days = (pd.to_datetime(room_stats['basic']['last_message']) - 
+                           pd.to_datetime(room_stats['basic']['first_message'])).days
+                    st.metric("활동 기간", f"{days}일")
             with col4:
-                st.metric("평균 메시지 길이", f"{chat_data['message'].str.len().mean():.1f} 자")
+                st.metric("평균 메시지 길이", f"{room_stats['basic']['avg_message_length']:.1f}자")
+            
+            # 사용자별 통계
+            st.subheader("👥 사용자별 통계")
+            st.dataframe(room_stats['users'])
+            
+            # 시간대별 활동
+            if not room_stats['hourly'].empty:
+                st.subheader("⏰ 시간대별 활동")
+                fig = px.bar(room_stats['hourly'], x='hour', y='message_count', 
+                           title="시간대별 메시지 수")
+                st.plotly_chart(fig)
+            
+            # 파일별 통계
+            if not room_stats['files'].empty:
+                st.subheader("📁 파일별 통계")
+                st.dataframe(room_stats['files'])
+        
+        # 선택된 채팅방 히스토리 표시
+        if 'selected_room_history' in st.session_state:
+            st.subheader("📖 채팅 히스토리")
+            
+            # 기간 필터
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input("시작 날짜", key="history_start")
+            with col2:
+                end_date = st.date_input("종료 날짜", key="history_end")
+            
+            if st.button("🔍 히스토리 조회"):
+                room_history = db_manager.get_room_history(
+                    st.session_state.selected_room_history,
+                    start_date.isoformat() if start_date else None,
+                    end_date.isoformat() if end_date else None
+                )
                 
-        except Exception as e:
-            st.error(f"❌ 파일 처리 중 오류가 발생했습니다: {str(e)}")
+                if not room_history.empty:
+                    st.dataframe(room_history)
+                    st.info(f"📊 총 {len(room_history)}개의 메시지를 찾았습니다.")
+                else:
+                    st.warning("⚠️ 해당 기간에 메시지가 없습니다.")
+        
+        # 채팅방 삭제 확인
+        if 'room_to_delete' in st.session_state:
+            st.error("⚠️ 정말로 이 채팅방을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ 삭제 확인", type="primary"):
+                    try:
+                        success = db_manager.delete_chat_room(st.session_state.room_to_delete)
+                        if success:
+                            st.success("✅ 채팅방이 삭제되었습니다.")
+                        else:
+                            st.error("❌ 채팅방 삭제에 실패했습니다.")
+                    except Exception as e:
+                        st.error(f"❌ 삭제 중 오류: {str(e)}")
+                    del st.session_state.room_to_delete
+                    st.rerun()
+            with col2:
+                if st.button("❌ 취소"):
+                    del st.session_state.room_to_delete
+                    st.rerun()
+        
+        # 채팅방 검색 기능
+        st.subheader("🔍 채팅방 검색")
+        search_room = st.selectbox(
+            "검색할 채팅방",
+            options=rooms_df['id'].tolist(),
+            format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]}"
+        )
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            search_keyword = st.text_input("키워드 검색", placeholder="예: 주식, 비트코인")
+        with col2:
+            search_user = st.selectbox("사용자 선택", ["전체"] + list(rooms_df[rooms_df['id']==search_room]['participants_list'].iloc[0]))
+        with col3:
+            search_date = st.date_input("검색 날짜 (선택사항)")
+        
+        if st.button("🔍 메시지 검색"):
+            search_results = db_manager.search_messages_in_room(
+                search_room,
+                keyword=search_keyword if search_keyword else None,
+                user=search_user if search_user != "전체" else None,
+                start_date=search_date.isoformat() if search_date else None
+            )
+            
+            if not search_results.empty:
+                st.subheader(f"🔍 검색 결과 ({len(search_results)}개)")
+                st.dataframe(search_results)
+            else:
+                st.info("🔍 검색 결과가 없습니다.")
 
 # 데이터 필터링 섹션
 elif selected == "데이터 필터링":
