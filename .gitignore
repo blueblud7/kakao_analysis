@@ -1,0 +1,64 @@
+# 데이터베이스 파일 (민감한 채팅 데이터 포함)
+*.db
+kakao_analysis.db
+
+# Python 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 환경 변수 파일 (API 키 등 민감정보)
+.env
+.env.local
+.env.production
+.env.staging
+
+# 업로드된 채팅 파일들
+*.txt
+*.csv
+uploads/
+
+# 생성된 리포트 파일들
+*.pdf
+*.xlsx
+reports/
+
+# IDE 설정 파일들
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 운영체제 생성 파일들
+.DS_Store
+Thumbs.db
+
+# 로그 파일들
+*.log
+logs/
+
+# 임시 파일들
+tmp/
+temp/
+*.tmp
+
+# Streamlit 설정
+.streamlit/
+
+# 가상환경
+venv/
+env/
+ENV/
+
+# 폰트 파일들 (용량이 클 수 있음)
+fonts/*.ttf
+fonts/*.ttc
+
+# 테스트 데이터
+test_data/
+sample_data/
+
+# 백업 파일들
+*.bak
+*.backup 
