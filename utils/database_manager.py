@@ -17,6 +17,10 @@ class DatabaseManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
+        # 기존 테이블 확인
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        existing_tables = [row[0] for row in cursor.fetchall()]
+        
         # 채팅방 테이블 (새로 추가)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS chat_rooms (
@@ -45,13 +49,14 @@ class DatabaseManager:
             )
         ''')
         
-        # 분석 세션 테이블 (수정)
+        # 분석 세션 테이블 (기존 호환성 유지)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS analysis_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_name TEXT NOT NULL,
                 room_id INTEGER,
                 file_ids TEXT,  -- JSON 형태로 파일 ID 목록
+                file_name TEXT,  -- 기존 호환성 유지
                 total_messages INTEGER,
                 participants_count INTEGER,
                 start_date TEXT,
@@ -62,22 +67,38 @@ class DatabaseManager:
             )
         ''')
         
-        # 채팅 데이터 테이블 (수정 - 중복 방지 및 파일 연결)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                room_id INTEGER,
-                file_id INTEGER,
-                datetime TEXT,
-                user TEXT,
-                message TEXT,
-                message_length INTEGER,
-                message_hash TEXT UNIQUE,  -- 중복 방지용 해시
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (room_id) REFERENCES chat_rooms (id),
-                FOREIGN KEY (file_id) REFERENCES chat_files (id)
-            )
-        ''')
+        # 채팅 데이터 테이블 - 기존 테이블 구조 확인 후 마이그레이션
+        if 'chat_messages' in existing_tables:
+            # 기존 테이블의 컬럼 확인
+            cursor.execute("PRAGMA table_info(chat_messages)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            # 새로운 컬럼이 없으면 추가
+            if 'room_id' not in columns:
+                cursor.execute('ALTER TABLE chat_messages ADD COLUMN room_id INTEGER')
+            if 'file_id' not in columns:
+                cursor.execute('ALTER TABLE chat_messages ADD COLUMN file_id INTEGER')
+            if 'message_hash' not in columns:
+                cursor.execute('ALTER TABLE chat_messages ADD COLUMN message_hash TEXT')
+        else:
+            # 새로운 테이블 생성
+            cursor.execute('''
+                CREATE TABLE chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    room_id INTEGER,
+                    file_id INTEGER,
+                    session_id INTEGER,  -- 기존 호환성 유지
+                    datetime TEXT,
+                    user TEXT,
+                    message TEXT,
+                    message_length INTEGER,
+                    message_hash TEXT,  -- 중복 방지용 해시
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (room_id) REFERENCES chat_rooms (id),
+                    FOREIGN KEY (file_id) REFERENCES chat_files (id),
+                    FOREIGN KEY (session_id) REFERENCES analysis_sessions (id)
+                )
+            ''')
         
         # GPT 분석 결과 테이블
         cursor.execute('''
@@ -278,24 +299,46 @@ class DatabaseManager:
         """모든 채팅방 목록 조회"""
         conn = sqlite3.connect(self.db_path)
         
-        rooms_df = pd.read_sql_query('''
-            SELECT cr.id, cr.room_name, cr.participants, 
-                   COUNT(DISTINCT cf.id) as file_count,
-                   COUNT(cm.id) as total_messages,
-                   MIN(cm.datetime) as first_message,
-                   MAX(cm.datetime) as last_message
-            FROM chat_rooms cr
-            LEFT JOIN chat_files cf ON cr.id = cf.room_id
-            LEFT JOIN chat_messages cm ON cr.id = cm.room_id
-            GROUP BY cr.id, cr.room_name, cr.participants
-            ORDER BY last_message DESC
-        ''', conn)
+        # 테이블 존재 여부 확인
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_rooms';")
+        chat_rooms_exists = cursor.fetchone() is not None
+        
+        if not chat_rooms_exists:
+            # 채팅방 테이블이 없으면 빈 DataFrame 반환
+            conn.close()
+            return pd.DataFrame(columns=['id', 'room_name', 'participants', 'file_count', 'total_messages', 'first_message', 'last_message', 'participants_list'])
+        
+        # 컬럼 존재 여부 확인
+        cursor.execute("PRAGMA table_info(chat_messages)")
+        columns = [row[1] for row in cursor.fetchall()]
+        has_room_id = 'room_id' in columns
+        
+        if has_room_id:
+            # 새로운 스키마 사용
+            rooms_df = pd.read_sql_query('''
+                SELECT cr.id, cr.room_name, cr.participants, 
+                       COUNT(DISTINCT cf.id) as file_count,
+                       COUNT(cm.id) as total_messages,
+                       MIN(cm.datetime) as first_message,
+                       MAX(cm.datetime) as last_message
+                FROM chat_rooms cr
+                LEFT JOIN chat_files cf ON cr.id = cf.room_id
+                LEFT JOIN chat_messages cm ON cr.id = cm.room_id
+                GROUP BY cr.id, cr.room_name, cr.participants
+                ORDER BY last_message DESC
+            ''', conn)
+        else:
+            # 기존 스키마 사용 - 빈 결과 반환
+            rooms_df = pd.DataFrame(columns=['id', 'room_name', 'participants', 'file_count', 'total_messages', 'first_message', 'last_message'])
         
         # participants JSON 파싱
-        if not rooms_df.empty:
+        if not rooms_df.empty and 'participants' in rooms_df.columns:
             rooms_df['participants_list'] = rooms_df['participants'].apply(
                 lambda x: json.loads(x) if x else []
             )
+        else:
+            rooms_df['participants_list'] = [[] for _ in range(len(rooms_df))]
         
         conn.close()
         return rooms_df

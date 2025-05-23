@@ -168,164 +168,181 @@ elif selected == "채팅방 히스토리":
     st.header("💬 채팅방 히스토리 관리")
     
     # 모든 채팅방 조회
-    rooms_df = db_manager.get_all_rooms()
-    
-    if rooms_df.empty:
-        st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 파일을 업로드해주세요.")
-    else:
-        st.subheader("📋 채팅방 목록")
+    try:
+        rooms_df = db_manager.get_all_rooms()
         
-        # 채팅방 목록 표시
-        for _, room in rooms_df.iterrows():
-            with st.expander(f"💬 {room['room_name']} ({room['total_messages']}개 메시지)"):
-                col1, col2, col3 = st.columns(3)
-                
+        if rooms_df.empty:
+            st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 파일을 업로드해주세요.")
+            st.info("💡 새로운 히스토리 관리 기능을 사용하려면 파일을 새로 업로드해주세요.")
+        else:
+            st.subheader("📋 채팅방 목록")
+            
+            # 채팅방 목록 표시
+            for _, room in rooms_df.iterrows():
+                with st.expander(f"💬 {room['room_name']} ({room['total_messages']}개 메시지)"):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.write(f"**참여자:** {len(room['participants_list'])}명")
+                        if len(room['participants_list']) <= 5:
+                            st.write(f"👥 {', '.join(room['participants_list'])}")
+                    
+                    with col2:
+                        st.write(f"**파일 수:** {room['file_count']}개")
+                        st.write(f"**총 메시지:** {room['total_messages']}개")
+                    
+                    with col3:
+                        if room['first_message']:
+                            st.write(f"**시작:** {room['first_message'][:10]}")
+                        if room['last_message']:
+                            st.write(f"**마지막:** {room['last_message'][:10]}")
+                    
+                    # 액션 버튼들
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        if st.button(f"📊 통계 보기", key=f"stats_{room['id']}"):
+                            st.session_state.selected_room_stats = room['id']
+                    
+                    with col2:
+                        if st.button(f"📖 히스토리 보기", key=f"history_{room['id']}"):
+                            st.session_state.selected_room_history = room['id']
+                    
+                    with col3:
+                        if st.button(f"💾 데이터 내보내기", key=f"export_{room['id']}"):
+                            # 채팅방 데이터 가져오기
+                            room_data = db_manager.get_room_history(room['id'])
+                            st.session_state.chat_data = room_data
+                            st.success("✅ 데이터가 로드되었습니다. 다른 섹션에서 분석하실 수 있습니다.")
+                    
+                    with col4:
+                        if st.button(f"🗑️ 삭제", key=f"delete_{room['id']}", type="secondary"):
+                            st.session_state.room_to_delete = room['id']
+            
+            # 선택된 채팅방 통계 표시
+            if 'selected_room_stats' in st.session_state:
+                try:
+                    st.subheader(f"📊 채팅방 통계")
+                    room_stats = db_manager.get_room_statistics(st.session_state.selected_room_stats)
+                    
+                    # 기본 통계
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("총 메시지", room_stats['basic']['total_messages'])
+                    with col2:
+                        st.metric("참여자 수", room_stats['basic']['participant_count'])
+                    with col3:
+                        if room_stats['basic']['first_message']:
+                            days = (pd.to_datetime(room_stats['basic']['last_message']) - 
+                                   pd.to_datetime(room_stats['basic']['first_message'])).days
+                            st.metric("활동 기간", f"{days}일")
+                    with col4:
+                        st.metric("평균 메시지 길이", f"{room_stats['basic']['avg_message_length']:.1f}자")
+                    
+                    # 사용자별 통계
+                    st.subheader("👥 사용자별 통계")
+                    st.dataframe(room_stats['users'])
+                    
+                    # 시간대별 활동
+                    if not room_stats['hourly'].empty:
+                        st.subheader("⏰ 시간대별 활동")
+                        fig = px.bar(room_stats['hourly'], x='hour', y='message_count', 
+                                   title="시간대별 메시지 수")
+                        st.plotly_chart(fig)
+                    
+                    # 파일별 통계
+                    if not room_stats['files'].empty:
+                        st.subheader("📁 파일별 통계")
+                        st.dataframe(room_stats['files'])
+                except Exception as e:
+                    st.error(f"통계 로드 중 오류: {str(e)}")
+            
+            # 선택된 채팅방 히스토리 표시
+            if 'selected_room_history' in st.session_state:
+                try:
+                    st.subheader("📖 채팅 히스토리")
+                    
+                    # 기간 필터
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        start_date = st.date_input("시작 날짜", key="history_start")
+                    with col2:
+                        end_date = st.date_input("종료 날짜", key="history_end")
+                    
+                    if st.button("🔍 히스토리 조회"):
+                        room_history = db_manager.get_room_history(
+                            st.session_state.selected_room_history,
+                            start_date.isoformat() if start_date else None,
+                            end_date.isoformat() if end_date else None
+                        )
+                        
+                        if not room_history.empty:
+                            st.dataframe(room_history)
+                            st.info(f"📊 총 {len(room_history)}개의 메시지를 찾았습니다.")
+                        else:
+                            st.warning("⚠️ 해당 기간에 메시지가 없습니다.")
+                except Exception as e:
+                    st.error(f"히스토리 로드 중 오류: {str(e)}")
+            
+            # 채팅방 삭제 확인
+            if 'room_to_delete' in st.session_state:
+                st.error("⚠️ 정말로 이 채팅방을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")
+                col1, col2 = st.columns(2)
                 with col1:
-                    st.write(f"**참여자:** {len(room['participants_list'])}명")
-                    if len(room['participants_list']) <= 5:
-                        st.write(f"👥 {', '.join(room['participants_list'])}")
-                
+                    if st.button("✅ 삭제 확인", type="primary"):
+                        try:
+                            success = db_manager.delete_chat_room(st.session_state.room_to_delete)
+                            if success:
+                                st.success("✅ 채팅방이 삭제되었습니다.")
+                            else:
+                                st.error("❌ 채팅방 삭제에 실패했습니다.")
+                        except Exception as e:
+                            st.error(f"❌ 삭제 중 오류: {str(e)}")
+                        del st.session_state.room_to_delete
+                        st.rerun()
                 with col2:
-                    st.write(f"**파일 수:** {room['file_count']}개")
-                    st.write(f"**총 메시지:** {room['total_messages']}개")
-                
-                with col3:
-                    if room['first_message']:
-                        st.write(f"**시작:** {room['first_message'][:10]}")
-                    if room['last_message']:
-                        st.write(f"**마지막:** {room['last_message'][:10]}")
-                
-                # 액션 버튼들
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    if st.button(f"📊 통계 보기", key=f"stats_{room['id']}"):
-                        st.session_state.selected_room_stats = room['id']
-                
-                with col2:
-                    if st.button(f"📖 히스토리 보기", key=f"history_{room['id']}"):
-                        st.session_state.selected_room_history = room['id']
-                
-                with col3:
-                    if st.button(f"💾 데이터 내보내기", key=f"export_{room['id']}"):
-                        # 채팅방 데이터 가져오기
-                        room_data = db_manager.get_room_history(room['id'])
-                        st.session_state.chat_data = room_data
-                        st.success("✅ 데이터가 로드되었습니다. 다른 섹션에서 분석하실 수 있습니다.")
-                
-                with col4:
-                    if st.button(f"🗑️ 삭제", key=f"delete_{room['id']}", type="secondary"):
-                        st.session_state.room_to_delete = room['id']
-        
-        # 선택된 채팅방 통계 표시
-        if 'selected_room_stats' in st.session_state:
-            st.subheader(f"📊 채팅방 통계")
-            room_stats = db_manager.get_room_statistics(st.session_state.selected_room_stats)
+                    if st.button("❌ 취소"):
+                        del st.session_state.room_to_delete
+                        st.rerun()
             
-            # 기본 통계
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("총 메시지", room_stats['basic']['total_messages'])
-            with col2:
-                st.metric("참여자 수", room_stats['basic']['participant_count'])
-            with col3:
-                if room_stats['basic']['first_message']:
-                    days = (pd.to_datetime(room_stats['basic']['last_message']) - 
-                           pd.to_datetime(room_stats['basic']['first_message'])).days
-                    st.metric("활동 기간", f"{days}일")
-            with col4:
-                st.metric("평균 메시지 길이", f"{room_stats['basic']['avg_message_length']:.1f}자")
-            
-            # 사용자별 통계
-            st.subheader("👥 사용자별 통계")
-            st.dataframe(room_stats['users'])
-            
-            # 시간대별 활동
-            if not room_stats['hourly'].empty:
-                st.subheader("⏰ 시간대별 활동")
-                fig = px.bar(room_stats['hourly'], x='hour', y='message_count', 
-                           title="시간대별 메시지 수")
-                st.plotly_chart(fig)
-            
-            # 파일별 통계
-            if not room_stats['files'].empty:
-                st.subheader("📁 파일별 통계")
-                st.dataframe(room_stats['files'])
-        
-        # 선택된 채팅방 히스토리 표시
-        if 'selected_room_history' in st.session_state:
-            st.subheader("📖 채팅 히스토리")
-            
-            # 기간 필터
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input("시작 날짜", key="history_start")
-            with col2:
-                end_date = st.date_input("종료 날짜", key="history_end")
-            
-            if st.button("🔍 히스토리 조회"):
-                room_history = db_manager.get_room_history(
-                    st.session_state.selected_room_history,
-                    start_date.isoformat() if start_date else None,
-                    end_date.isoformat() if end_date else None
+            # 채팅방 검색 기능
+            if not rooms_df.empty:
+                st.subheader("🔍 채팅방 검색")
+                search_room = st.selectbox(
+                    "검색할 채팅방",
+                    options=rooms_df['id'].tolist(),
+                    format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]}"
                 )
                 
-                if not room_history.empty:
-                    st.dataframe(room_history)
-                    st.info(f"📊 총 {len(room_history)}개의 메시지를 찾았습니다.")
-                else:
-                    st.warning("⚠️ 해당 기간에 메시지가 없습니다.")
-        
-        # 채팅방 삭제 확인
-        if 'room_to_delete' in st.session_state:
-            st.error("⚠️ 정말로 이 채팅방을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✅ 삭제 확인", type="primary"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    search_keyword = st.text_input("키워드 검색", placeholder="예: 주식, 비트코인")
+                with col2:
+                    selected_room_data = rooms_df[rooms_df['id']==search_room]['participants_list'].iloc[0]
+                    search_user = st.selectbox("사용자 선택", ["전체"] + list(selected_room_data))
+                with col3:
+                    search_date = st.date_input("검색 날짜 (선택사항)")
+                
+                if st.button("🔍 메시지 검색"):
                     try:
-                        success = db_manager.delete_chat_room(st.session_state.room_to_delete)
-                        if success:
-                            st.success("✅ 채팅방이 삭제되었습니다.")
+                        search_results = db_manager.search_messages_in_room(
+                            search_room,
+                            keyword=search_keyword if search_keyword else None,
+                            user=search_user if search_user != "전체" else None,
+                            start_date=search_date.isoformat() if search_date else None
+                        )
+                        
+                        if not search_results.empty:
+                            st.subheader(f"🔍 검색 결과 ({len(search_results)}개)")
+                            st.dataframe(search_results)
                         else:
-                            st.error("❌ 채팅방 삭제에 실패했습니다.")
+                            st.info("🔍 검색 결과가 없습니다.")
                     except Exception as e:
-                        st.error(f"❌ 삭제 중 오류: {str(e)}")
-                    del st.session_state.room_to_delete
-                    st.rerun()
-            with col2:
-                if st.button("❌ 취소"):
-                    del st.session_state.room_to_delete
-                    st.rerun()
-        
-        # 채팅방 검색 기능
-        st.subheader("🔍 채팅방 검색")
-        search_room = st.selectbox(
-            "검색할 채팅방",
-            options=rooms_df['id'].tolist(),
-            format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]}"
-        )
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            search_keyword = st.text_input("키워드 검색", placeholder="예: 주식, 비트코인")
-        with col2:
-            search_user = st.selectbox("사용자 선택", ["전체"] + list(rooms_df[rooms_df['id']==search_room]['participants_list'].iloc[0]))
-        with col3:
-            search_date = st.date_input("검색 날짜 (선택사항)")
-        
-        if st.button("🔍 메시지 검색"):
-            search_results = db_manager.search_messages_in_room(
-                search_room,
-                keyword=search_keyword if search_keyword else None,
-                user=search_user if search_user != "전체" else None,
-                start_date=search_date.isoformat() if search_date else None
-            )
-            
-            if not search_results.empty:
-                st.subheader(f"🔍 검색 결과 ({len(search_results)}개)")
-                st.dataframe(search_results)
-            else:
-                st.info("🔍 검색 결과가 없습니다.")
+                        st.error(f"검색 중 오류: {str(e)}")
+    
+    except Exception as e:
+        st.error(f"채팅방 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
+        st.info("💡 기존 데이터베이스와의 호환성 문제일 수 있습니다. 새로운 파일을 업로드해 보세요.")
 
 # 데이터 필터링 섹션
 elif selected == "데이터 필터링":

@@ -74,29 +74,42 @@ class KakaoParser:
     def parse_message(self, line, current_date):
         """메시지 라인을 파싱"""
         
-        for pattern in self.patterns:
-            match = re.match(pattern, line)
-            if match:
-                groups = match.groups()
-                
-                if len(groups) == 3:
-                    if '년' in groups[1]:  # 날짜가 포함된 경우
-                        datetime_str = groups[1]
-                        user = groups[1]
-                        message = groups[2]
-                    else:
-                        user = groups[0]
-                        time_str = groups[1]
-                        message = groups[2]
-                        
-                        # 시간 파싱
-                        datetime_str = self.parse_time(time_str, current_date)
-                
-                    return {
-                        'datetime': datetime_str,
-                        'user': user.strip(),
-                        'message': message.strip()
-                    }
+        try:
+            for pattern in self.patterns:
+                match = re.match(pattern, line)
+                if match:
+                    groups = match.groups()
+                    
+                    if len(groups) == 3:
+                        # 패턴에 따라 다른 처리
+                        if '년' in groups[1] and '월' in groups[1]:  # 날짜가 포함된 경우
+                            datetime_str = groups[0]  # 첫 번째 그룹이 datetime
+                            user = groups[1]
+                            message = groups[2]
+                            
+                            # 날짜 파싱 시도
+                            try:
+                                parsed_date = pd.to_datetime(datetime_str)
+                                datetime_str = parsed_date.strftime('%Y-%m-%d %H:%M:%S')
+                            except:
+                                # 파싱 실패 시 기본값 사용
+                                datetime_str = f"{current_date or datetime.now().strftime('%Y-%m-%d')} 12:00:00"
+                        else:
+                            user = groups[0]
+                            time_str = groups[1]
+                            message = groups[2]
+                            
+                            # 시간 파싱
+                            datetime_str = self.parse_time(time_str, current_date)
+                    
+                        return {
+                            'datetime': datetime_str,
+                            'user': user.strip(),
+                            'message': message.strip()
+                        }
+        except Exception:
+            # 파싱 실패 시 None 반환
+            pass
         
         return None
     
@@ -105,22 +118,54 @@ class KakaoParser:
         if not current_date:
             current_date = datetime.now().strftime('%Y-%m-%d')
         
-        # 오전/오후 처리
-        if '오후' in time_str:
-            time_part = time_str.replace('오후', '').strip()
-            hour, minute = map(int, time_part.split(':'))
-            if hour != 12:
-                hour += 12
-        elif '오전' in time_str:
-            time_part = time_str.replace('오전', '').strip()
-            hour, minute = map(int, time_part.split(':'))
-            if hour == 12:
-                hour = 0
-        else:
-            # 24시간 형식
-            hour, minute = map(int, time_str.split(':'))
+        try:
+            # 오전/오후 처리
+            if '오후' in time_str:
+                time_part = time_str.replace('오후', '').strip()
+                # 콜론으로 분리하여 시간과 분 추출
+                time_parts = time_part.split(':')
+                if len(time_parts) != 2:
+                    return f"{current_date} 12:00:00"  # 기본값
+                
+                try:
+                    hour, minute = int(time_parts[0]), int(time_parts[1])
+                    if hour != 12:
+                        hour += 12
+                except ValueError:
+                    return f"{current_date} 12:00:00"  # 기본값
+                    
+            elif '오전' in time_str:
+                time_part = time_str.replace('오전', '').strip()
+                time_parts = time_part.split(':')
+                if len(time_parts) != 2:
+                    return f"{current_date} 00:00:00"  # 기본값
+                
+                try:
+                    hour, minute = int(time_parts[0]), int(time_parts[1])
+                    if hour == 12:
+                        hour = 0
+                except ValueError:
+                    return f"{current_date} 00:00:00"  # 기본값
+            else:
+                # 24시간 형식
+                time_parts = time_str.split(':')
+                if len(time_parts) != 2:
+                    return f"{current_date} 12:00:00"  # 기본값
+                
+                try:
+                    hour, minute = int(time_parts[0]), int(time_parts[1])
+                except ValueError:
+                    return f"{current_date} 12:00:00"  # 기본값
+            
+            # 시간 범위 검증
+            if not (0 <= hour <= 23) or not (0 <= minute <= 59):
+                return f"{current_date} 12:00:00"  # 기본값
+            
+            return f"{current_date} {hour:02d}:{minute:02d}:00"
         
-        return f"{current_date} {hour:02d}:{minute:02d}:00"
+        except Exception:
+            # 모든 예외 상황에서 기본값 반환
+            return f"{current_date} 12:00:00"
     
     def process_csv_format(self, df):
         """CSV 형식 데이터 처리"""
