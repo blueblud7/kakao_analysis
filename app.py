@@ -465,9 +465,9 @@ elif selected == "시각화":
             # 시간별 메시지 수
             hourly_data = data.groupby(data['datetime'].dt.hour).size()
             fig = px.bar(x=hourly_data.index, y=hourly_data.values, 
-                        title="시간대별 메시지 수")
-            fig.update_xaxis(title="시간")
-            fig.update_yaxis(title="메시지 수")
+                        title="시간대별 메시지 수",
+                        labels={'x': '시간', 'y': '메시지 수'})
+            fig.update_layout(xaxis_title="시간", yaxis_title="메시지 수")
             st.plotly_chart(fig, use_container_width=True)
             
         elif viz_type == "사용자별 메시지 수":

@@ -26,23 +26,34 @@ class KakaoParser:
     def parse_file(self, uploaded_file):
         """업로드된 파일을 파싱하여 DataFrame 반환"""
         
+        print(f"🔍 파일 파싱 시작: {uploaded_file.name}")
+        
         # 파일 내용 읽기
         file_content = uploaded_file.read()
+        print(f"📁 파일 크기: {len(file_content)} bytes")
+        
         encoding = self.detect_encoding(file_content)
+        print(f"🔤 감지된 인코딩: {encoding}")
         
         # 문자열로 변환
         try:
             content = file_content.decode(encoding)
         except:
             content = file_content.decode('utf-8', errors='ignore')
+            print("⚠️ 인코딩 변경: utf-8로 fallback")
+        
+        print(f"📝 파일 내용 길이: {len(content)} 문자")
+        print(f"📝 첫 500 문자:\n{content[:500]}")
         
         lines = content.split('\n')
+        print(f"📄 총 라인 수: {len(lines)}")
         
         messages = []
         current_date = None
         
-        for line in lines:
+        for i, line in enumerate(lines[:10]):  # 처음 10줄만 디버깅
             line = line.strip()
+            print(f"라인 {i}: '{line}'")
             if not line:
                 continue
                 
@@ -51,22 +62,52 @@ class KakaoParser:
             if date_match:
                 year, month, day = date_match.groups()
                 current_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                print(f"📅 날짜 라인 감지: {current_date}")
                 continue
             
             # 메시지 파싱
             message_data = self.parse_message(line, current_date)
             if message_data:
                 messages.append(message_data)
+                print(f"✅ 메시지 파싱 성공: {message_data}")
+        
+        print(f"🎯 일반 형식으로 파싱된 메시지 수: {len(messages)}")
         
         if not messages:
+            print("🔄 CSV 형식으로 재시도...")
             # CSV 형식으로 시도
             try:
                 uploaded_file.seek(0)
-                df = pd.read_csv(uploaded_file, encoding=encoding)
+                
+                # 다양한 구분자와 인코딩으로 시도
+                separators = [',', '\t', ';', '|']
+                encodings = [encoding, 'utf-8', 'cp949', 'euc-kr']
+                
+                df = None
+                for sep in separators:
+                    for enc in encodings:
+                        try:
+                            uploaded_file.seek(0)
+                            df = pd.read_csv(uploaded_file, encoding=enc, sep=sep)
+                            print(f"✅ CSV 읽기 성공 - 구분자: '{sep}', 인코딩: {enc}")
+                            print(f"📊 읽은 데이터 크기: {len(df)} 행, {len(df.columns)} 열")
+                            print(f"📊 컬럼명: {df.columns.tolist()}")
+                            break
+                        except Exception as e:
+                            print(f"❌ 시도 실패 (구분자: '{sep}', 인코딩: {enc}): {str(e)}")
+                            continue
+                    if df is not None:
+                        break
+                
+                if df is None:
+                    raise ValueError("모든 CSV 파싱 시도 실패")
+                
                 return self.process_csv_format(df)
-            except:
-                raise ValueError("지원하지 않는 파일 형식입니다.")
+            except Exception as e:
+                print(f"❌ CSV 파싱 완전 실패: {str(e)}")
+                raise ValueError(f"지원하지 않는 파일 형식입니다: {str(e)}")
         
+        print("✅ 일반 형식으로 파싱 완료")
         df = pd.DataFrame(messages)
         df['datetime'] = pd.to_datetime(df['datetime'])
         return df.sort_values('datetime')
@@ -169,6 +210,9 @@ class KakaoParser:
     
     def process_csv_format(self, df):
         """CSV 형식 데이터 처리"""
+        print(f"📊 원본 CSV 데이터 크기: {len(df)} 행")  # 디버깅용
+        print(f"📊 컬럼명: {df.columns.tolist()}")  # 디버깅용
+        
         # CSV 컬럼명 매핑
         column_mapping = {
             'Date': 'datetime',
@@ -191,7 +235,51 @@ class KakaoParser:
         if missing_columns:
             raise ValueError(f"필수 컬럼이 누락되었습니다: {missing_columns}")
         
-        # 날짜 형식 변환
-        df['datetime'] = pd.to_datetime(df['datetime'])
+        # 빈 행 제거
+        df = df.dropna(subset=['datetime', 'user', 'message'])
+        print(f"📊 빈 행 제거 후: {len(df)} 행")  # 디버깅용
         
-        return df 
+        # 날짜 형식 변환 (새로운 형식 지원)
+        def parse_datetime(date_str):
+            if pd.isna(date_str):
+                return None
+                
+            date_str = str(date_str).strip()
+            
+            # 여러 날짜 형식 시도
+            formats = [
+                '%Y.%m.%d %H:%M',     # 2024.1.20 16:25
+                '%Y-%m-%d %H:%M:%S',  # 2024-01-20 16:25:00
+                '%Y/%m/%d %H:%M',     # 2024/1/20 16:25
+                '%Y.%m.%d %H:%M:%S',  # 2024.1.20 16:25:00
+                '%Y-%m-%d',           # 2024-01-20
+                '%Y.%m.%d',           # 2024.1.20
+            ]
+            
+            for fmt in formats:
+                try:
+                    return pd.to_datetime(date_str, format=fmt)
+                except ValueError:
+                    continue
+            
+            # 마지막으로 pandas의 자동 파싱 시도
+            try:
+                return pd.to_datetime(date_str)
+            except:
+                print(f"⚠️ 날짜 파싱 실패: {date_str}")
+                return None
+        
+        # 모든 행에 날짜 파싱 적용
+        df['datetime'] = df['datetime'].apply(parse_datetime)
+        
+        # 파싱 실패한 행 제거
+        before_count = len(df)
+        df = df.dropna(subset=['datetime'])
+        after_count = len(df)
+        
+        if before_count != after_count:
+            print(f"⚠️ 날짜 파싱 실패로 {before_count - after_count}개 행 제거됨")
+        
+        print(f"📊 최종 데이터 크기: {len(df)} 행")  # 디버깅용
+        
+        return df.sort_values('datetime') 

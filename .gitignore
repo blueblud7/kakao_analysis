@@ -61,4 +61,108 @@ sample_data/
 
 # 백업 파일들
 *.bak
-*.backup 
+*.backup
+
+# Xcode
+#
+# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+
+## User settings
+xcuserdata/
+
+## compatibility with Xcode 8 and earlier (ignoring not required starting Xcode 9)
+*.xcscmblueprint
+*.xccheckout
+
+## compatibility with Xcode 3 and earlier (ignoring not required starting Xcode 4)
+build/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+## Obj-C/Swift specific
+*.hmap
+
+## App packaging
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+
+# CocoaPods
+Pods/
+*.xcworkspace
+
+# Carthage
+Carthage/Checkouts
+Carthage/Build/
+
+# Accio dependency management
+Dependencies/
+.accio/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Code Injection
+iOSInjectionProject/
+
+# macOS
+.DS_Store
+
+# 앱 특화 설정
+# 사용자 데이터 및 민감정보
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+UserDefaults.plist
+
+# API 키 및 환경설정
+Config.plist
+APIKeys.plist
+Secrets.swift
+
+# 분석 데이터 및 결과
+AnalysisData/
+ChatFiles/
+ExportedReports/
+
+# 로그 파일
+*.log
+Logs/
+
+# 임시 파일
+tmp/
+temp/
+*.tmp
+
+# 테스트 데이터
+TestData/
+SampleChats/
+
+# 백업 파일
+*.backup
+*.bak
+
+# 큰 리소스 파일들 (개발 중에는 제외)
+LargeAssets/
+Videos/
+
+# 문서 및 리소스 (용량이 큰 경우)
+Documentation/Generated/ 
