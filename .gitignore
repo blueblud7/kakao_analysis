@@ -11,8 +11,9 @@ __pycache__/
 # 환경 변수 파일 (API 키 등 민감정보)
 .env
 .env.local
-.env.production
-.env.staging
+.env.development.local
+.env.test.local
+.env.production.local
 
 # 업로드된 채팅 파일들
 *.txt
@@ -50,6 +51,8 @@ temp/
 venv/
 env/
 ENV/
+env.bak/
+venv.bak/
 
 # 폰트 파일들 (용량이 클 수 있음)
 fonts/*.ttf
@@ -125,6 +128,14 @@ iOSInjectionProject/
 
 # macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 
 # 앱 특화 설정
 # 사용자 데이터 및 민감정보
@@ -165,4 +176,36 @@ LargeAssets/
 Videos/
 
 # 문서 및 리소스 (용량이 큰 경우)
-Documentation/Generated/ 
+Documentation/Generated/
+
+# API 키 및 민감한 정보
+*.key
+secrets.py
+config.py
+
+# Python 관련
+.Python
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# React Native 관련 (혹시 있다면)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log* 

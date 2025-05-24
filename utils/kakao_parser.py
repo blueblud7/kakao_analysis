@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 import chardet
 import io
+import streamlit as st
 
 class KakaoParser:
     """카카오톡 채팅 파일을 파싱하는 클래스"""
@@ -10,89 +11,120 @@ class KakaoParser:
     def __init__(self):
         # 카카오톡 메시지 패턴 (다양한 형식 지원)
         self.patterns = [
-            # 패턴 1: [이름] [오후 1:23] 메시지
-            r'\[([^\]]+)\] \[([^\]]+)\] (.+)',
-            # 패턴 2: 2023년 12월 1일 오후 1:23, 이름 : 메시지
-            r'(\d{4}년 \d{1,2}월 \d{1,2}일 [^\s]+ \d{1,2}:\d{2}), ([^:]+) : (.+)',
-            # 패턴 3: 오후 1:23, 이름 : 메시지
-            r'([^\s]+ \d{1,2}:\d{2}), ([^:]+) : (.+)',
+            r'(\d{4}\.\d{1,2}\.\d{1,2}\s+\d{1,2}:\d{2}), (.+?) : (.+)',  # 기본 형식
+            r'(\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}:\d{2}), (.+?) : (.+)',  # 대안 형식
+            r'(.+?)\s+(\d{4}\.\d{1,2}\.\d{1,2}\s+\d{1,2}:\d{2}), (.+)',  # 사용자 먼저
+            r'(.+?), (\d{4}\.\d{1,2}\.\d{1,2}\s+\d{1,2}:\d{2}) : (.+)',  # 다른 형식
+            r'(.+?) \[(\d{4}년 \d{1,2}월 \d{1,2}일 .+?)\] (.+)',  # 년월일 형식
         ]
     
     def detect_encoding(self, file_content):
-        """파일 인코딩 감지"""
-        detected = chardet.detect(file_content)
-        return detected.get('encoding', 'utf-8')
+        """파일 인코딩 감지 (성능 최적화)"""
+        # 첫 10000바이트만 사용해서 빠르게 감지
+        sample = file_content[:10000] if len(file_content) > 10000 else file_content
+        detected = chardet.detect(sample)
+        return detected['encoding'] or 'utf-8'
     
     def parse_file(self, uploaded_file):
-        """업로드된 파일을 파싱하여 DataFrame 반환"""
-        
+        """파일 파싱 (속도 최적화)"""
         print(f"🔍 파일 파싱 시작: {uploaded_file.name}")
+        print(f"📁 파일 크기: {uploaded_file.size} bytes")
         
         # 파일 내용 읽기
         file_content = uploaded_file.read()
-        print(f"📁 파일 크기: {len(file_content)} bytes")
-        
         encoding = self.detect_encoding(file_content)
         print(f"🔤 감지된 인코딩: {encoding}")
         
-        # 문자열로 변환
+        # 텍스트 디코딩
         try:
-            content = file_content.decode(encoding)
-        except:
-            content = file_content.decode('utf-8', errors='ignore')
-            print("⚠️ 인코딩 변경: utf-8로 fallback")
+            text = file_content.decode(encoding)
+        except UnicodeDecodeError:
+            text = file_content.decode('utf-8', errors='ignore')
         
-        print(f"📝 파일 내용 길이: {len(content)} 문자")
-        print(f"📝 첫 500 문자:\n{content[:500]}")
+        print(f"📝 파일 내용 길이: {len(text)} 문자")
+        print(f"📝 첫 500 문자:")
+        print(text[:500])
         
-        lines = content.split('\n')
+        lines = text.strip().split('\n')
         print(f"📄 총 라인 수: {len(lines)}")
         
+        # 디버깅: 첫 10줄 출력
+        for i, line in enumerate(lines[:10]):
+            print(f"라인 {i}: '{line}'")
+        
+        # 일반 카카오톡 형식으로 파싱 시도
         messages = []
         current_date = None
         
-        for i, line in enumerate(lines[:10]):  # 처음 10줄만 디버깅
-            line = line.strip()
-            print(f"라인 {i}: '{line}'")
-            if not line:
-                continue
-                
+        # 진행률 표시를 위한 progress bar
+        if len(lines) > 1000:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+        
+        for i, line in enumerate(lines):
+            # 진행률 업데이트 (1000줄 이상일 때만)
+            if len(lines) > 1000 and i % max(1, len(lines) // 100) == 0:
+                progress = min(i / len(lines), 1.0)
+                progress_bar.progress(progress)
+                status_text.text(f"파싱 진행률: {progress*100:.1f}% ({i:,}/{len(lines):,} 줄)")
+            
             # 날짜 라인 체크
-            date_match = re.match(r'(\d{4})년 (\d{1,2})월 (\d{1,2})일', line)
-            if date_match:
-                year, month, day = date_match.groups()
-                current_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-                print(f"📅 날짜 라인 감지: {current_date}")
+            if re.match(r'.*\d{4}년 \d{1,2}월 \d{1,2}일.*', line):
+                date_match = re.search(r'(\d{4})년 (\d{1,2})월 (\d{1,2})일', line)
+                if date_match:
+                    year, month, day = date_match.groups()
+                    current_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
                 continue
             
             # 메시지 파싱
-            message_data = self.parse_message(line, current_date)
-            if message_data:
-                messages.append(message_data)
-                print(f"✅ 메시지 파싱 성공: {message_data}")
+            parsed = self.parse_message(line, current_date)
+            if parsed:
+                messages.append(parsed)
+        
+        if len(lines) > 1000:
+            progress_bar.empty()
+            status_text.empty()
         
         print(f"🎯 일반 형식으로 파싱된 메시지 수: {len(messages)}")
         
-        if not messages:
+        # 일반 형식으로 파싱이 안 되면 CSV 형식으로 시도
+        if len(messages) < 10:  # 파싱된 메시지가 너무 적으면
             print("🔄 CSV 형식으로 재시도...")
-            # CSV 형식으로 시도
             try:
+                # CSV 파싱 시도
                 uploaded_file.seek(0)
                 
-                # 다양한 구분자와 인코딩으로 시도
+                # 여러 구분자와 인코딩 조합 시도
                 separators = [',', '\t', ';', '|']
-                encodings = [encoding, 'utf-8', 'cp949', 'euc-kr']
+                encodings = ['UTF-8-SIG', 'utf-8', 'cp949', 'euc-kr']
                 
                 df = None
                 for sep in separators:
                     for enc in encodings:
                         try:
                             uploaded_file.seek(0)
-                            df = pd.read_csv(uploaded_file, encoding=enc, sep=sep)
-                            print(f"✅ CSV 읽기 성공 - 구분자: '{sep}', 인코딩: {enc}")
-                            print(f"📊 읽은 데이터 크기: {len(df)} 행, {len(df.columns)} 열")
-                            print(f"📊 컬럼명: {df.columns.tolist()}")
-                            break
+                            # 첫 1000줄만 시도해서 빠른 검증
+                            df_test = pd.read_csv(uploaded_file, encoding=enc, sep=sep, nrows=100)
+                            if len(df_test.columns) >= 3:  # 최소 3개 컬럼 필요
+                                uploaded_file.seek(0)
+                                # pandas 호환성을 위해 kwargs 사용
+                                csv_kwargs = {
+                                    'encoding': enc,
+                                    'sep': sep,
+                                    'on_bad_lines': 'skip',  # 문제가 있는 행 건너뛰기
+                                    'low_memory': False
+                                }
+                                try:
+                                    df = pd.read_csv(uploaded_file, **csv_kwargs)
+                                except TypeError:
+                                    # 구버전 pandas의 경우 on_bad_lines 없음
+                                    csv_kwargs.pop('on_bad_lines', None)
+                                    df = pd.read_csv(uploaded_file, **csv_kwargs)
+                                
+                                print(f"✅ CSV 읽기 성공 - 구분자: '{sep}', 인코딩: {enc}")
+                                print(f"📊 읽은 데이터 크기: {len(df)} 행, {len(df.columns)} 열")
+                                print(f"📊 컬럼명: {df.columns.tolist()}")
+                                break
                         except Exception as e:
                             print(f"❌ 시도 실패 (구분자: '{sep}', 인코딩: {enc}): {str(e)}")
                             continue

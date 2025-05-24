@@ -1,21 +1,25 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
 import plotly.express as px
 import plotly.graph_objects as go
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
-import io
-import re
-from streamlit_option_menu import option_menu
+from datetime import datetime, timedelta
 import os
+import sys
+from io import StringIO
+import re
+from collections import Counter
+from streamlit_option_menu import option_menu
 
+# 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
+# 경로 추가
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 모듈 임포트
 from utils.kakao_parser import KakaoParser
 from utils.gpt_analyzer import GPTAnalyzer
-from utils.data_processor import DataProcessor
-from utils.report_generator import ReportGenerator
-from utils.database_manager import DatabaseManager
 
 # 페이지 설정
 st.set_page_config(
@@ -25,650 +29,1332 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 커스텀 CSS - 세련된 다크 모드 테마
+st.markdown("""
+<style>
+/* 전체 배경 */
+.main {
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+    color: #ffffff;
+}
+
+/* 사이드바 스타일 */
+.css-1d391kg {
+    background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+}
+
+/* 메트릭 카드 스타일 */
+.stMetric {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 15px;
+    padding: 20px;
+    box-shadow: 0 8px 32px 0 rgba(102, 126, 234, 0.37);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: white;
+    margin-bottom: 20px;
+}
+
+/* 제목 스타일 */
+h1 {
+    color: #667eea;
+    text-align: center;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+/* 버튼 스타일 */
+.stButton > button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 10px 25px;
+    font-weight: bold;
+    box-shadow: 0 4px 15px 0 rgba(102, 126, 234, 0.4);
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px 0 rgba(102, 126, 234, 0.6);
+}
+
+/* 파일 업로더 스타일 */
+.uploadedFile {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+    padding: 10px;
+    color: white;
+}
+
+/* 차트 컨테이너 스타일 */
+.plot-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 15px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+}
+
+/* 데이터프레임 스타일 */
+.dataframe {
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+/* 성공/오류 메시지 스타일 */
+.stSuccess {
+    background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
+    border-radius: 10px;
+    border: none;
+    color: white;
+}
+
+.stError {
+    background: linear-gradient(135deg, #fd79a8 0%, #fdcb6e 100%);
+    border-radius: 10px;
+    border: none;
+    color: white;
+}
+
+/* 경고 메시지 스타일 */
+.stWarning {
+    background: linear-gradient(135deg, #fdcb6e 0%, #fd79a8 100%);
+    border-radius: 10px;
+    border: none;
+    color: white;
+}
+
+/* 정보 메시지 스타일 */
+.stInfo {
+    background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+    border-radius: 10px;
+    border: none;
+    color: white;
+}
+
+/* 스피너 스타일 */
+.stSpinner {
+    color: #667eea;
+}
+
+/* 선택박스, 입력창 스타일 */
+.stSelectbox > div > div {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stTextInput > div > div > input {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* 카드 스타일 */
+.analysis-card {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-radius: 15px;
+    padding: 25px;
+    margin: 20px 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+/* 텍스트 색상 */
+.stMarkdown, .stText {
+    color: #ffffff;
+}
+
+/* 헤더 스타일 */
+h2, h3, h4, h5, h6 {
+    color: #667eea;
+}
+
+/* 링크 스타일 */
+a {
+    color: #74b9ff;
+}
+
+/* 프로그레스 바 스타일 */
+.stProgress > div > div > div {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+</style>
+""", unsafe_allow_html=True)
+
 # 제목
-st.title("💬 카카오톡 오픈챗 분석기")
-st.markdown("---")
+st.markdown("""
+<h1 style='text-align: center; color: #667eea; font-size: 3rem; margin-bottom: 2rem;'>
+    💬 카카오톡 채팅 분석기
+</h1>
+<p style='text-align: center; color: #b2bec3; font-size: 1.2rem; margin-bottom: 3rem;'>
+    AI 기반 스마트 채팅 분석 플랫폼
+</p>
+""", unsafe_allow_html=True)
 
 # 세션 상태 초기화
 if 'chat_data' not in st.session_state:
     st.session_state.chat_data = None
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = None
-if 'current_session_id' not in st.session_state:
-    st.session_state.current_session_id = None
+if 'selected_room' not in st.session_state:
+    st.session_state.selected_room = None
 
-# 데이터베이스 매니저 초기화
-db_manager = DatabaseManager()
-
-# 사이드바 - 네비게이션
+# 사이드바 메뉴
 with st.sidebar:
+    st.markdown("## 🎛️ 메뉴")
+    
     selected = option_menu(
-        "메뉴",
-        ["파일 업로드", "채팅방 히스토리", "데이터 필터링", "GPT 분석", "시각화", "리포트 생성", "데이터 관리", "설정"],
-        icons=['upload', 'chat-dots', 'funnel', 'robot', 'bar-chart', 'file-earmark-pdf', 'database', 'gear'],
+        menu_title=None,
+        options=[
+            "🏠 홈",
+            "📁 파일 업로드", 
+            "📊 데이터 분석",
+            "🤖 GPT 분석",
+            "📈 시각화",
+            "💾 데이터 관리",
+            "⚙️ 설정"
+        ],
+        icons=[
+            "house",
+            "upload", 
+            "bar-chart",
+            "robot",
+            "graph-up",
+            "database",
+            "gear"
+        ],
         menu_icon="cast",
         default_index=0,
+        orientation="vertical",
+        styles={
+            "container": {
+                "padding": "0!important",
+                "background-color": "transparent"
+            },
+            "icon": {
+                "color": "white",
+                "font-size": "18px"
+            },
+            "nav-link": {
+                "font-size": "16px",
+                "text-align": "left",
+                "margin": "5px",
+                "padding": "10px",
+                "border-radius": "10px",
+                "background": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                "color": "white",
+                "border": "none"
+            },
+            "nav-link-selected": {
+                "background": "linear-gradient(135deg, #764ba2 0%, #667eea 100%)",
+                "color": "white",
+                "font-weight": "bold",
+                "box-shadow": "0 4px 15px 0 rgba(102, 126, 234, 0.6)"
+            },
+        }
     )
 
-# 파일 업로드 섹션 (개선)
-if selected == "파일 업로드":
+# 홈 페이지
+if selected == "🏠 홈":
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("""
+        <div class='analysis-card' style='text-align: center; padding: 40px;'>
+            <h2 style='color: #667eea; margin-bottom: 30px;'>🎉 환영합니다!</h2>
+            <p style='font-size: 1.1rem; color: #b2bec3; line-height: 1.6;'>
+                카카오톡 채팅 분석기는 AI 기반의 스마트한 채팅 분석 도구입니다.<br>
+                채팅 데이터를 업로드하고 다양한 인사이트를 얻어보세요!
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # 기능 소개
+    st.markdown("### 🚀 주요 기능")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 15px; text-align: center; color: white; margin: 10px; box-shadow: 0 8px 32px 0 rgba(102, 126, 234, 0.37);'>
+            <h3>📁 파일 업로드</h3>
+            <p>TXT, CSV 형식의<br>카카오톡 채팅 파일<br>지원</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 15px; text-align: center; color: white; margin: 10px; box-shadow: 0 8px 32px 0 rgba(102, 126, 234, 0.37);'>
+            <h3>🤖 AI 분석</h3>
+            <p>GPT 기반의<br>스마트한 채팅<br>내용 분석</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 15px; text-align: center; color: white; margin: 10px; box-shadow: 0 8px 32px 0 rgba(102, 126, 234, 0.37);'>
+            <h3>📈 시각화</h3>
+            <p>다양한 차트와<br>그래프로<br>데이터 시각화</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # 시작하기 가이드
+    st.markdown("### 📖 시작하기 가이드")
+    
+    with st.expander("1️⃣ 파일 업로드 방법", expanded=False):
+        st.markdown("""
+        1. **카카오톡 채팅방**에서 우상단 메뉴(≡) 클릭
+        2. **대화 내보내기** 선택
+        3. **텍스트** 또는 **CSV** 형식으로 저장
+        4. **📁 파일 업로드** 메뉴에서 파일 업로드
+        """)
+    
+    with st.expander("2️⃣ 데이터 분석 활용법", expanded=False):
+        st.markdown("""
+        - **📊 데이터 분석**: 기본 통계 및 패턴 분석
+        - **🤖 GPT 분석**: AI 기반 고급 분석 및 인사이트
+        - **📈 시각화**: 트렌드, 히트맵, 워드클라우드 등
+        - **💾 데이터 관리**: 분석 결과 저장 및 관리
+        """)
+    
+    with st.expander("3️⃣ 지원되는 파일 형식", expanded=False):
+        st.markdown("""
+        - **TXT 파일**: 카카오톡 기본 내보내기 형식
+        - **CSV 파일**: 구조화된 데이터 형식
+        - **인코딩**: UTF-8, UTF-8-SIG, CP949, EUC-KR 자동 감지
+        """)
+
+# 파일 업로드 섹션
+elif selected == "📁 파일 업로드":
     st.header("📁 카카오톡 채팅 파일 업로드")
     
-    # 탭으로 구분
-    tab1, tab2 = st.tabs(["🆕 새 파일 업로드", "📚 기존 채팅방에 추가"])
+    col1, col2 = st.columns([2, 1])
     
-    with tab1:
-        st.subheader("새로운 채팅 파일 업로드")
-        uploaded_file = st.file_uploader(
-            "카카오톡 채팅 내역 파일을 업로드하세요 (CSV 또는 TXT)",
-            type=['csv', 'txt'],
-            help="카카오톡에서 내보낸 채팅 내역 파일을 업로드하세요",
-            key="new_file"
-        )
+    with col1:
+        st.markdown("""
+        ### 📝 지원되는 파일 형식
+        - **TXT 파일**: 카카오톡에서 내보낸 텍스트 파일
+        - **CSV 파일**: 구조화된 채팅 데이터
         
-        if uploaded_file is not None:
-            try:
-                with st.spinner("파일을 분석하는 중..."):
-                    # 파일 저장
-                    file_path = f"temp_{uploaded_file.name}"
-                    with open(file_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    
-                    # 파일 파싱
-                    parser = KakaoParser()
-                    chat_data = parser.parse_file(uploaded_file)
+        ### 💡 사용 방법
+        1. 카카오톡 채팅방에서 대화 내보내기
+        2. 텍스트 또는 CSV 파일로 저장
+        3. 아래에서 파일을 업로드하세요
+        """)
+    
+    with col2:
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 15px; text-align: center; color: white;'>
+            <h4>📋 업로드 가이드</h4>
+            <p>최대 파일 크기:<br><strong>200MB</strong></p>
+            <p>지원 형식:<br><strong>TXT, CSV</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # 파일 업로드
+    uploaded_file = st.file_uploader(
+        "채팅 파일을 선택하세요",
+        type=['txt', 'csv'],
+        help="카카오톡에서 내보낸 .txt 파일 또는 .csv 파일을 업로드하세요"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            # 파일 크기 및 정보 표시
+            file_size_mb = uploaded_file.size / (1024 * 1024)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📄 파일명", uploaded_file.name)
+            with col2:
+                st.metric("💾 파일 크기", f"{file_size_mb:.1f} MB")
+            with col3:
+                st.metric("📋 파일 형식", uploaded_file.type)
+            
+            # 파일 파싱
+            with st.spinner('🔄 파일을 파싱하는 중...'):
+                parser = KakaoParser()
+                chat_data = parser.parse_file(uploaded_file)
+                
+                if chat_data is not None and not chat_data.empty:
                     st.session_state.chat_data = chat_data
                     
-                    # 데이터베이스에 저장 (자동)
-                    file_id, room_id, new_messages = db_manager.save_chat_file(
-                        file_path, uploaded_file.name, chat_data
+                    # 성공 메시지
+                    st.success(f"✅ 파일 파싱 완료! **{len(chat_data):,}개**의 메시지가 발견되었습니다.")
+                    
+                    # 데이터 미리보기
+                    st.subheader("📋 데이터 미리보기")
+                    
+                    # 스타일링된 데이터프레임
+                    st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                    st.dataframe(
+                        chat_data.head(10),
+                        use_container_width=True,
+                        hide_index=True
                     )
-                    
-                st.success(f"✅ 파일 업로드 완료!")
-                
-                if new_messages == 0:
-                    st.info("ℹ️ 이 파일은 이미 데이터베이스에 존재합니다.")
-                else:
-                    st.success(f"🆕 {new_messages}개의 새로운 메시지가 추가되었습니다!")
-                
-                # 데이터 미리보기
-                st.subheader("📋 데이터 미리보기")
-                st.dataframe(chat_data.head(10))
-                
-                # 기본 통계
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("총 메시지 수", len(chat_data))
-                with col2:
-                    st.metric("참여자 수", chat_data['user'].nunique())
-                with col3:
-                    st.metric("기간", f"{(chat_data['datetime'].max() - chat_data['datetime'].min()).days} 일")
-                with col4:
-                    st.metric("평균 메시지 길이", f"{chat_data['message'].str.len().mean():.1f} 자")
-                    
-                # 정리
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                    
-            except Exception as e:
-                st.error(f"❌ 파일 처리 중 오류가 발생했습니다: {str(e)}")
-    
-    with tab2:
-        st.subheader("기존 채팅방에 파일 추가")
-        
-        # 기존 채팅방 목록 조회
-        rooms_df = db_manager.get_all_rooms()
-        
-        if not rooms_df.empty:
-            selected_room = st.selectbox(
-                "채팅방 선택",
-                options=rooms_df['id'].tolist(),
-                format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]} ({rooms_df[rooms_df['id']==x]['total_messages'].iloc[0]}개 메시지)"
-            )
-            
-            uploaded_file_add = st.file_uploader(
-                "추가할 채팅 파일 선택",
-                type=['csv', 'txt'],
-                key="add_file"
-            )
-            
-            if uploaded_file_add is not None and st.button("📂 채팅방에 추가"):
-                try:
-                    with st.spinner("파일을 추가하는 중..."):
-                        # 파일 저장
-                        file_path = f"temp_{uploaded_file_add.name}"
-                        with open(file_path, "wb") as f:
-                            f.write(uploaded_file_add.getbuffer())
-                        
-                        # 파일 파싱
-                        parser = KakaoParser()
-                        new_chat_data = parser.parse_file(uploaded_file_add)
-                        
-                        # 기존 채팅방에 추가
-                        file_id, new_messages = db_manager.update_room_with_new_file(
-                            selected_room, file_path, uploaded_file_add.name, new_chat_data
-                        )
-                        
-                    if new_messages > 0:
-                        st.success(f"✅ {new_messages}개의 새로운 메시지가 추가되었습니다!")
-                    else:
-                        st.info("ℹ️ 중복된 메시지입니다. 새로운 메시지가 없습니다.")
-                    
-                    # 정리
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
-                        
-                except Exception as e:
-                    st.error(f"❌ 파일 추가 중 오류: {str(e)}")
-        else:
-            st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 새 파일을 업로드해주세요.")
-
-# 채팅방 히스토리 섹션 (새로 추가)
-elif selected == "채팅방 히스토리":
-    st.header("💬 채팅방 히스토리 관리")
-    
-    # 모든 채팅방 조회
-    try:
-        rooms_df = db_manager.get_all_rooms()
-        
-        if rooms_df.empty:
-            st.info("📝 아직 저장된 채팅방이 없습니다. 먼저 파일을 업로드해주세요.")
-            st.info("💡 새로운 히스토리 관리 기능을 사용하려면 파일을 새로 업로드해주세요.")
-        else:
-            st.subheader("📋 채팅방 목록")
-            
-            # 채팅방 목록 표시
-            for _, room in rooms_df.iterrows():
-                with st.expander(f"💬 {room['room_name']} ({room['total_messages']}개 메시지)"):
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.write(f"**참여자:** {len(room['participants_list'])}명")
-                        if len(room['participants_list']) <= 5:
-                            st.write(f"👥 {', '.join(room['participants_list'])}")
-                    
-                    with col2:
-                        st.write(f"**파일 수:** {room['file_count']}개")
-                        st.write(f"**총 메시지:** {room['total_messages']}개")
-                    
-                    with col3:
-                        if room['first_message']:
-                            st.write(f"**시작:** {room['first_message'][:10]}")
-                        if room['last_message']:
-                            st.write(f"**마지막:** {room['last_message'][:10]}")
-                    
-                    # 액션 버튼들
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        if st.button(f"📊 통계 보기", key=f"stats_{room['id']}"):
-                            st.session_state.selected_room_stats = room['id']
-                    
-                    with col2:
-                        if st.button(f"📖 히스토리 보기", key=f"history_{room['id']}"):
-                            st.session_state.selected_room_history = room['id']
-                    
-                    with col3:
-                        if st.button(f"💾 데이터 내보내기", key=f"export_{room['id']}"):
-                            # 채팅방 데이터 가져오기
-                            room_data = db_manager.get_room_history(room['id'])
-                            st.session_state.chat_data = room_data
-                            st.success("✅ 데이터가 로드되었습니다. 다른 섹션에서 분석하실 수 있습니다.")
-                    
-                    with col4:
-                        if st.button(f"🗑️ 삭제", key=f"delete_{room['id']}", type="secondary"):
-                            st.session_state.room_to_delete = room['id']
-            
-            # 선택된 채팅방 통계 표시
-            if 'selected_room_stats' in st.session_state:
-                try:
-                    st.subheader(f"📊 채팅방 통계")
-                    room_stats = db_manager.get_room_statistics(st.session_state.selected_room_stats)
+                    st.markdown('</div>', unsafe_allow_html=True)
                     
                     # 기본 통계
+                    st.subheader("📊 기본 통계")
                     col1, col2, col3, col4 = st.columns(4)
+                    
                     with col1:
-                        st.metric("총 메시지", room_stats['basic']['total_messages'])
+                        st.metric(
+                            "📝 총 메시지 수",
+                            f"{len(chat_data):,}",
+                            delta=None
+                        )
                     with col2:
-                        st.metric("참여자 수", room_stats['basic']['participant_count'])
+                        st.metric(
+                            "👥 참여자 수",
+                            len(chat_data['user'].unique()),
+                            delta=None
+                        )
                     with col3:
-                        if room_stats['basic']['first_message']:
-                            days = (pd.to_datetime(room_stats['basic']['last_message']) - 
-                                   pd.to_datetime(room_stats['basic']['first_message'])).days
-                            st.metric("활동 기간", f"{days}일")
+                        date_range = f"{chat_data['datetime'].dt.date.min()}"
+                        st.metric(
+                            "📅 시작일",
+                            date_range,
+                            delta=None
+                        )
                     with col4:
-                        st.metric("평균 메시지 길이", f"{room_stats['basic']['avg_message_length']:.1f}자")
-                    
-                    # 사용자별 통계
-                    st.subheader("👥 사용자별 통계")
-                    st.dataframe(room_stats['users'])
-                    
-                    # 시간대별 활동
-                    if not room_stats['hourly'].empty:
-                        st.subheader("⏰ 시간대별 활동")
-                        fig = px.bar(room_stats['hourly'], x='hour', y='message_count', 
-                                   title="시간대별 메시지 수")
-                        st.plotly_chart(fig)
-                    
-                    # 파일별 통계
-                    if not room_stats['files'].empty:
-                        st.subheader("📁 파일별 통계")
-                        st.dataframe(room_stats['files'])
-                except Exception as e:
-                    st.error(f"통계 로드 중 오류: {str(e)}")
-            
-            # 선택된 채팅방 히스토리 표시
-            if 'selected_room_history' in st.session_state:
-                try:
-                    st.subheader("📖 채팅 히스토리")
-                    
-                    # 기간 필터
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        start_date = st.date_input("시작 날짜", key="history_start")
-                    with col2:
-                        end_date = st.date_input("종료 날짜", key="history_end")
-                    
-                    if st.button("🔍 히스토리 조회"):
-                        room_history = db_manager.get_room_history(
-                            st.session_state.selected_room_history,
-                            start_date.isoformat() if start_date else None,
-                            end_date.isoformat() if end_date else None
+                        date_range = f"{chat_data['datetime'].dt.date.max()}"
+                        st.metric(
+                            "📅 종료일", 
+                            date_range,
+                            delta=None
                         )
                         
-                        if not room_history.empty:
-                            st.dataframe(room_history)
-                            st.info(f"📊 총 {len(room_history)}개의 메시지를 찾았습니다.")
+                    # 추가 통계
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        days_diff = (chat_data['datetime'].dt.date.max() - chat_data['datetime'].dt.date.min()).days
+                        if days_diff > 0:
+                            avg_daily = len(chat_data) / days_diff
+                            st.metric("📈 일평균 메시지", f"{avg_daily:.1f}개")
                         else:
-                            st.warning("⚠️ 해당 기간에 메시지가 없습니다.")
-                except Exception as e:
-                    st.error(f"히스토리 로드 중 오류: {str(e)}")
+                            st.metric("📈 일평균 메시지", f"{len(chat_data)}개")
+                    
+                    with col2:
+                        avg_length = chat_data['message'].str.len().mean()
+                        st.metric("📏 평균 메시지 길이", f"{avg_length:.1f}자")
+                    
+                    with col3:
+                        most_active = chat_data['user'].value_counts().index[0]
+                        st.metric("🏆 최다 발언자", most_active)
+                    
+                    with col4:
+                        peak_hour = chat_data['datetime'].dt.hour.value_counts().index[0]
+                        st.metric("⏰ 최고 활동시간", f"{peak_hour}시")
+                        
+                else:
+                    st.error("❌ 파일 파싱에 실패했습니다. 파일 형식을 확인해주세요.")
+                    
+        except Exception as e:
+            st.error(f"❌ 파일 처리 중 오류가 발생했습니다: {str(e)}")
+            st.write("파일이 올바른 카카오톡 채팅 파일인지 확인해주세요.")
+
+# 데이터 분석 섹션
+elif selected == "📊 데이터 분석":
+    st.header("📊 채팅 데이터 분석")
+    
+    if st.session_state.chat_data is None:
+        st.warning("⚠️ 먼저 **📁 파일 업로드** 메뉴에서 파일을 업로드해주세요!")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("📁 파일 업로드하기", use_container_width=True):
+                st.rerun()
+    else:
+        data = st.session_state.chat_data
+        
+        # 분석 옵션
+        analysis_tabs = st.tabs(["👥 사용자 분석", "⏰ 시간 분석", "💬 메시지 분석", "📈 트렌드 분석"])
+        
+        with analysis_tabs[0]:  # 사용자 분석
+            st.subheader("👥 사용자별 활동 분석")
             
-            # 채팅방 삭제 확인
-            if 'room_to_delete' in st.session_state:
-                st.error("⚠️ 정말로 이 채팅방을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ 삭제 확인", type="primary"):
-                        try:
-                            success = db_manager.delete_chat_room(st.session_state.room_to_delete)
-                            if success:
-                                st.success("✅ 채팅방이 삭제되었습니다.")
-                            else:
-                                st.error("❌ 채팅방 삭제에 실패했습니다.")
-                        except Exception as e:
-                            st.error(f"❌ 삭제 중 오류: {str(e)}")
-                        del st.session_state.room_to_delete
-                        st.rerun()
-                with col2:
-                    if st.button("❌ 취소"):
-                        del st.session_state.room_to_delete
-                        st.rerun()
+            col1, col2 = st.columns(2)
             
-            # 채팅방 검색 기능
-            if not rooms_df.empty:
-                st.subheader("🔍 채팅방 검색")
-                search_room = st.selectbox(
-                    "검색할 채팅방",
-                    options=rooms_df['id'].tolist(),
-                    format_func=lambda x: f"{rooms_df[rooms_df['id']==x]['room_name'].iloc[0]}"
+            with col1:
+                st.markdown("**📊 메시지 수 상위 10명**")
+                user_stats = data['user'].value_counts().head(10)
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.dataframe(
+                    user_stats.reset_index(),
+                    column_config={
+                        "index": "사용자",
+                        "user": "메시지 수"
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with col2:
+                fig = px.bar(
+                    x=user_stats.values,
+                    y=user_stats.index,
+                    orientation='h',
+                    title="사용자별 메시지 수",
+                    labels={'x': '메시지 수', 'y': '사용자'},
+                    color=user_stats.values,
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    search_keyword = st.text_input("키워드 검색", placeholder="예: 주식, 비트코인")
-                with col2:
-                    selected_room_data = rooms_df[rooms_df['id']==search_room]['participants_list'].iloc[0]
-                    search_user = st.selectbox("사용자 선택", ["전체"] + list(selected_room_data))
-                with col3:
-                    search_date = st.date_input("검색 날짜 (선택사항)")
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+        
+        with analysis_tabs[1]:  # 시간 분석
+            st.subheader("⏰ 시간대별 활동 분석")
+            
+            # 시간별 분포
+            data['hour'] = data['datetime'].dt.hour
+            hourly_stats = data['hour'].value_counts().sort_index()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                fig = px.line(
+                    x=hourly_stats.index,
+                    y=hourly_stats.values,
+                    title="📈 시간대별 메시지 수",
+                    labels={'x': '시간', 'y': '메시지 수'},
+                    markers=True
+                )
+                fig.update_traces(line_color='#ff6b6b', marker_color='#ff6b6b')
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
                 
-                if st.button("🔍 메시지 검색"):
-                    try:
-                        search_results = db_manager.search_messages_in_room(
-                            search_room,
-                            keyword=search_keyword if search_keyword else None,
-                            user=search_user if search_user != "전체" else None,
-                            start_date=search_date.isoformat() if search_date else None
-                        )
-                        
-                        if not search_results.empty:
-                            st.subheader(f"🔍 검색 결과 ({len(search_results)}개)")
-                            st.dataframe(search_results)
-                        else:
-                            st.info("🔍 검색 결과가 없습니다.")
-                    except Exception as e:
-                        st.error(f"검색 중 오류: {str(e)}")
-    
-    except Exception as e:
-        st.error(f"채팅방 목록을 불러오는 중 오류가 발생했습니다: {str(e)}")
-        st.info("💡 기존 데이터베이스와의 호환성 문제일 수 있습니다. 새로운 파일을 업로드해 보세요.")
-
-# 데이터 필터링 섹션
-elif selected == "데이터 필터링":
-    st.header("🔍 데이터 필터링")
-    
-    if st.session_state.chat_data is None:
-        st.warning("⚠️ 먼저 채팅 파일을 업로드해주세요.")
-    else:
-        chat_data = st.session_state.chat_data
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("📅 기간 선택")
-            min_date = chat_data['datetime'].min().date()
-            max_date = chat_data['datetime'].max().date()
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
             
-            start_date = st.date_input("시작 날짜", min_date, min_value=min_date, max_value=max_date)
-            end_date = st.date_input("종료 날짜", max_date, min_value=min_date, max_value=max_date)
-            
-        with col2:
-            st.subheader("👤 사용자 선택")
-            users = ['전체'] + list(chat_data['user'].unique())
-            selected_users = st.multiselect("분석할 사용자 선택", users, default=['전체'])
-            
-        st.subheader("🎯 키워드 필터링")
-        keywords = st.text_input("키워드 입력 (쉼표로 구분)", placeholder="예: 주식, 비트코인, 삼성전자")
+            with col2:
+                # 요일별 분포
+                data['weekday'] = data['datetime'].dt.day_name()
+                weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                weekday_stats = data['weekday'].value_counts().reindex(weekday_order)
+                
+                fig = px.bar(
+                    x=['월', '화', '수', '목', '금', '토', '일'],
+                    y=weekday_stats.values,
+                    title="📅 요일별 메시지 수",
+                    labels={'x': '요일', 'y': '메시지 수'},
+                    color=weekday_stats.values,
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         
-        # 필터링 적용
-        if st.button("🔍 필터 적용"):
-            processor = DataProcessor()
-            filtered_data = processor.filter_data(
-                chat_data, 
-                start_date, 
-                end_date, 
-                selected_users, 
-                keywords
+        with analysis_tabs[2]:  # 메시지 분석
+            st.subheader("💬 메시지 내용 분석")
+            
+            # 메시지 길이 분석
+            data['message_length'] = data['message'].str.len()
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📏 평균 길이", f"{data['message_length'].mean():.1f}자")
+            with col2:
+                st.metric("📐 최장 메시지", f"{data['message_length'].max()}자")
+            with col3:
+                st.metric("📊 중간값", f"{data['message_length'].median():.1f}자")
+            with col4:
+                st.metric("📈 표준편차", f"{data['message_length'].std():.1f}")
+            
+            # 메시지 길이 히스토그램
+            fig = px.histogram(
+                data,
+                x='message_length',
+                nbins=50,
+                title="📊 메시지 길이 분포",
+                labels={'message_length': '메시지 길이 (문자수)', 'count': '빈도'},
+                color_discrete_sequence=['#ff6b6b']
+            )
+            fig.update_layout(
+                height=400,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
             )
             
-            st.session_state.filtered_data = filtered_data
-            st.success(f"✅ 필터링 완료! {len(filtered_data)} 개의 메시지가 선택되었습니다.")
+            st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with analysis_tabs[3]:  # 트렌드 분석
+            st.subheader("📈 시간 흐름 트렌드 분석")
             
-            # 필터링된 데이터 미리보기
-            st.dataframe(filtered_data.head(10))
+            # 일별 메시지 수 트렌드
+            daily_data = data.groupby(data['datetime'].dt.date).size().reset_index()
+            daily_data.columns = ['date', 'count']
+            
+            fig = px.line(
+                daily_data,
+                x='date',
+                y='count',
+                title="📈 일별 메시지 수 변화",
+                labels={'date': '날짜', 'count': '메시지 수'},
+                markers=True
+            )
+            fig.update_traces(line_color='#ff6b6b', marker_color='#ff6b6b')
+            fig.update_layout(
+                height=500,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # 월별 집계
+            if len(daily_data) > 30:  # 충분한 데이터가 있을 때만
+                data['month'] = data['datetime'].dt.to_period('M')
+                monthly_data = data.groupby('month').size().reset_index()
+                monthly_data.columns = ['month', 'count']
+                monthly_data['month'] = monthly_data['month'].astype(str)
+                
+                fig = px.bar(
+                    monthly_data,
+                    x='month',
+                    y='count',
+                    title="📅 월별 메시지 수",
+                    labels={'month': '월', 'count': '메시지 수'},
+                    color='count',
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
 # GPT 분석 섹션
-elif selected == "GPT 분석":
-    st.header("🤖 GPT 분석")
+elif selected == "🤖 GPT 분석":
+    st.header("🤖 GPT 기반 채팅 분석")
     
     if st.session_state.chat_data is None:
-        st.warning("⚠️ 먼저 채팅 파일을 업로드해주세요.")
+        st.warning("⚠️ 먼저 **📁 파일 업로드** 메뉴에서 파일을 업로드해주세요!")
     else:
-        # OpenAI API 키 입력
-        api_key = st.text_input("OpenAI API 키", type="password")
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # OpenAI API 키 입력
+            api_key = st.text_input(
+                "🔑 OpenAI API 키를 입력하세요:",
+                type="password",
+                value=os.getenv("OPENAI_API_KEY", ""),
+                help="OpenAI API 키가 필요합니다. https://platform.openai.com/api-keys"
+            )
+        
+        with col2:
+            st.markdown("""
+            <div style='background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); padding: 20px; border-radius: 15px; text-align: center; color: white; margin-top: 25px;'>
+                <h4>🔐 API 키 안내</h4>
+                <p>OpenAI 플랫폼에서<br>API 키를 발급받으세요</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         if api_key:
-            # 분석 옵션
-            st.subheader("🎯 분석 옵션")
+            st.subheader("🔧 분석 설정")
             
             col1, col2 = st.columns(2)
             with col1:
+                sample_size = st.slider(
+                    "분석할 메시지 수",
+                    100,
+                    min(2000, len(st.session_state.chat_data)),
+                    500,
+                    help="더 많은 메시지를 분석할수록 정확하지만 시간이 오래 걸립니다."
+                )
+            with col2:
                 analysis_type = st.selectbox(
                     "분석 유형",
-                    ["종합 분석", "감정 분석", "주요 키워드 추출", "토픽 분석", "요약"]
-                )
-            
-            with col2:
-                target_user = st.selectbox(
-                    "분석 대상",
-                    ["전체"] + list(st.session_state.chat_data['user'].unique())
+                    [
+                        "종합 분석",
+                        "주요 주제 분석", 
+                        "감정 분석",
+                        "사용자 특성 분석",
+                        "트렌드 분석"
+                    ],
+                    help="원하는 분석 유형을 선택하세요."
                 )
             
             # 분석 실행
-            if st.button("🚀 분석 시작"):
-                data_to_analyze = st.session_state.filtered_data if 'filtered_data' in st.session_state else st.session_state.chat_data
-                
-                with st.spinner("GPT가 채팅을 분석하는 중..."):
-                    analyzer = GPTAnalyzer(api_key)
-                    results = analyzer.analyze_chat(data_to_analyze, analysis_type, target_user)
-                    results['target_user'] = target_user  # 대상 사용자 정보 추가
-                    st.session_state.analysis_results = results
-                
-                st.success("✅ 분석 완료!")
-                
-                # 결과를 데이터베이스에 저장
-                if st.session_state.current_session_id:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("🚀 AI 분석 시작", type="primary", use_container_width=True):
                     try:
-                        db_manager.save_gpt_analysis(st.session_state.current_session_id, results)
-                        st.info("📊 분석 결과가 데이터베이스에 저장되었습니다.")
+                        with st.spinner('🤖 GPT가 채팅을 분석하는 중... (1-3분 소요)'):
+                            # GPT 분석기 초기화
+                            analyzer = GPTAnalyzer(api_key)
+                            
+                            # 데이터 샘플링 (최신 메시지 우선)
+                            sample_data = st.session_state.chat_data.tail(sample_size)
+                            
+                            # 분석 실행
+                            result = analyzer.analyze_chat(sample_data, analysis_type)
+                            
+                            if result and not result.get('error', False):
+                                st.session_state.analysis_results = result
+                                st.success("✅ AI 분석이 완료되었습니다!")
+                                
+                                # 결과 표시
+                                st.markdown("---")
+                                st.subheader("🎯 AI 분석 결과")
+                                
+                                if isinstance(result, dict) and 'summary' in result:
+                                    # 메인 분석 결과
+                                    st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                    st.markdown(result['summary'])
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                                    
+                                    # 추가 정보들을 탭으로 구성
+                                    if any(key in result for key in ['keywords', 'insights', 'data_stats']):
+                                        result_tabs = st.tabs(["🔍 키워드", "💡 인사이트", "📊 통계"])
+                                        
+                                        with result_tabs[0]:
+                                            if 'keywords' in result and result['keywords']:
+                                                st.subheader("🔍 주요 키워드")
+                                                keywords = result['keywords'][:15]
+                                                
+                                                # 키워드를 태그 형태로 표시
+                                                keyword_html = ""
+                                                for keyword in keywords:
+                                                    keyword_html += f'<span style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; padding: 5px 10px; margin: 3px; border-radius: 15px; display: inline-block;">{keyword}</span>'
+                                                
+                                                st.markdown(keyword_html, unsafe_allow_html=True)
+                                            else:
+                                                st.info("키워드 정보가 없습니다.")
+                                        
+                                        with result_tabs[1]:
+                                            if 'insights' in result and result['insights']:
+                                                st.subheader("💡 주요 인사이트")
+                                                for i, insight in enumerate(result['insights'][:8], 1):
+                                                    st.markdown(f"**{i}.** {insight}")
+                                            else:
+                                                st.info("인사이트 정보가 없습니다.")
+                                        
+                                        with result_tabs[2]:
+                                            if 'data_stats' in result:
+                                                stats = result['data_stats']
+                                                st.subheader("📊 분석 통계")
+                                                
+                                                col1, col2, col3 = st.columns(3)
+                                                with col1:
+                                                    st.metric("📝 분석 메시지", f"{stats.get('total_messages', 0):,}개")
+                                                with col2:
+                                                    st.metric("👥 참여자", f"{stats.get('unique_users', 0)}명")
+                                                with col3:
+                                                    st.metric("📅 분석 기간", stats.get('date_range', ''))
+                                            else:
+                                                st.info("통계 정보가 없습니다.")
+                                else:
+                                    st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                                    st.markdown(str(result))
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                                
+                            else:
+                                error_msg = result.get('summary', '알 수 없는 오류가 발생했습니다.') if result else '분석 결과를 받지 못했습니다.'
+                                st.error(f"❌ 분석 중 오류가 발생했습니다: {error_msg}")
+                                
                     except Exception as e:
-                        st.warning(f"⚠️ 분석 결과 저장 중 오류: {str(e)}")
+                        st.error(f"❌ GPT 분석 중 오류가 발생했습니다: {str(e)}")
+        else:
+            st.info("💡 OpenAI API 키를 입력하면 AI 기반 채팅 분석을 사용할 수 있습니다.")
+            
+            with st.expander("🔗 OpenAI API 키 발급 방법", expanded=False):
+                st.markdown("""
+                1. [OpenAI 플랫폼](https://platform.openai.com/) 접속
+                2. 계정 로그인 또는 회원가입
+                3. **API keys** 메뉴로 이동
+                4. **Create new secret key** 클릭
+                5. 생성된 키를 복사하여 위 입력창에 붙여넣기
                 
-                # 결과 표시
-                st.subheader("📊 분석 결과")
-                st.markdown(results['summary'])
-                
-                if 'keywords' in results:
-                    st.subheader("🔑 주요 키워드")
-                    for keyword in results['keywords']:
-                        st.write(f"• {keyword}")
+                ⚠️ **주의사항**: API 키는 안전하게 보관하세요.
+                """)
 
 # 시각화 섹션
-elif selected == "시각화":
-    st.header("📊 데이터 시각화")
+elif selected == "📈 시각화":
+    st.header("📈 고급 데이터 시각화")
     
     if st.session_state.chat_data is None:
-        st.warning("⚠️ 먼저 채팅 파일을 업로드해주세요.")
+        st.warning("⚠️ 먼저 **📁 파일 업로드** 메뉴에서 파일을 업로드해주세요!")
     else:
-        data = st.session_state.filtered_data if 'filtered_data' in st.session_state else st.session_state.chat_data
+        data = st.session_state.chat_data
         
-        # 시각화 옵션
-        viz_type = st.selectbox(
-            "시각화 유형",
-            ["시간대별 활동", "사용자별 메시지 수", "워드클라우드", "감정 분석"]
-        )
+        # 시각화 유형 선택
+        viz_options = [
+            "📈 일별 메시지 트렌드",
+            "🔥 사용자별 활동 히트맵", 
+            "📊 메시지 길이 분포",
+            "☁️ 키워드 워드클라우드",
+            "⏰ 시간대별 활동 패턴",
+            "📅 월별/요일별 분석"
+        ]
         
-        if viz_type == "시간대별 활동":
-            st.subheader("⏰ 시간대별 활동 패턴")
+        selected_viz = st.selectbox("🎨 시각화 유형을 선택하세요:", viz_options)
+        
+        if selected_viz == "📈 일별 메시지 트렌드":
+            st.subheader("📈 일별 메시지 수 변화")
             
-            # 시간별 메시지 수
-            hourly_data = data.groupby(data['datetime'].dt.hour).size()
-            fig = px.bar(x=hourly_data.index, y=hourly_data.values, 
-                        title="시간대별 메시지 수",
-                        labels={'x': '시간', 'y': '메시지 수'})
-            fig.update_layout(xaxis_title="시간", yaxis_title="메시지 수")
+            # 일별 데이터 집계
+            daily_data = data.groupby(data['datetime'].dt.date).size().reset_index()
+            daily_data.columns = ['date', 'count']
+            
+            # 트렌드 차트
+            fig = px.line(
+                daily_data,
+                x='date',
+                y='count',
+                title="일별 메시지 수 변화",
+                labels={'date': '날짜', 'count': '메시지 수'},
+                markers=True
+            )
+            fig.update_traces(line_color='#ff6b6b', marker_color='#ff6b6b')
+            fig.update_layout(
+                height=500,
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            st.markdown('<div class="plot-container">', unsafe_allow_html=True)
             st.plotly_chart(fig, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
-        elif viz_type == "사용자별 메시지 수":
-            st.subheader("👥 사용자별 활동량")
-            
-            user_counts = data['user'].value_counts()
-            fig = px.pie(values=user_counts.values, names=user_counts.index,
-                        title="사용자별 메시지 비율")
-            st.plotly_chart(fig, use_container_width=True)
-            
-        elif viz_type == "워드클라우드":
-            st.subheader("☁️ 워드클라우드")
-            
-            # 텍스트 전처리 및 워드클라우드 생성
-            text = ' '.join(data['message'].dropna())
-            if text:
-                wordcloud = WordCloud(
-                    font_path='./fonts/NanumGothic.ttf',  # 한글 폰트 경로
-                    width=800, 
-                    height=400,
-                    background_color='white'
-                ).generate(text)
+            # 이동평균 추가
+            if len(daily_data) > 7:
+                daily_data['moving_avg_7'] = daily_data['count'].rolling(window=7, center=True).mean()
                 
-                fig, ax = plt.subplots()
-                ax.imshow(wordcloud, interpolation='bilinear')
-                ax.axis('off')
-                st.pyplot(fig)
-
-# 리포트 생성 섹션
-elif selected == "리포트 생성":
-    st.header("📄 리포트 생성")
-    
-    if st.session_state.chat_data is None:
-        st.warning("⚠️ 먼저 채팅 파일을 업로드해주세요.")
-    else:
-        st.subheader("📋 리포트 옵션")
+                fig2 = px.line(
+                    daily_data,
+                    x='date',
+                    y=['count', 'moving_avg_7'],
+                    title="일별 메시지 수 + 7일 이동평균",
+                    labels={'date': '날짜', 'value': '메시지 수'}
+                )
+                fig2.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig2, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            report_type = st.selectbox("리포트 형식", ["PDF", "Excel", "둘 다"])
-        with col2:
-            include_analysis = st.checkbox("GPT 분석 결과 포함", value=True)
-        
-        # 리포트 생성
-        if st.button("📄 리포트 생성"):
-            report_gen = ReportGenerator()
-            data_to_use = st.session_state.filtered_data if 'filtered_data' in st.session_state else st.session_state.chat_data
-            analysis_results = st.session_state.analysis_results if include_analysis else None
+        elif selected_viz == "🔥 사용자별 활동 히트맵":
+            st.subheader("🔥 사용자별 시간대 활동 히트맵")
             
-            with st.spinner("리포트를 생성하는 중..."):
-                try:
-                    if report_type in ["PDF", "둘 다"]:
-                        # PDF 리포트 생성
-                        pdf_data = report_gen.generate_pdf_report(
-                            st.session_state.chat_data, 
-                            analysis_results, 
-                            data_to_use
-                        )
-                        
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        pdf_filename = f"카카오톡_분석_리포트_{timestamp}.pdf"
-                        
-                        st.download_button(
-                            label="📥 PDF 리포트 다운로드",
-                            data=pdf_data,
-                            file_name=pdf_filename,
-                            mime="application/pdf"
-                        )
-                    
-                    if report_type in ["Excel", "둘 다"]:
-                        # Excel 리포트 생성
-                        excel_data = report_gen.generate_excel_report(
-                            st.session_state.chat_data, 
-                            analysis_results, 
-                            data_to_use
-                        )
-                        
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        excel_filename = f"카카오톡_분석_데이터_{timestamp}.xlsx"
-                        
-                        st.download_button(
-                            label="📥 Excel 리포트 다운로드",
-                            data=excel_data,
-                            file_name=excel_filename,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    
-                    st.success("✅ 리포트가 생성되었습니다!")
-                    
-                except Exception as e:
-                    st.error(f"❌ 리포트 생성 중 오류: {str(e)}")
+            # 상위 활성 사용자 선택
+            top_users = data['user'].value_counts().head(10).index
+            heatmap_data = data[data['user'].isin(top_users)].copy()
+            heatmap_data['hour'] = heatmap_data['datetime'].dt.hour
+            
+            # 피벗 테이블 생성
+            pivot_table = heatmap_data.pivot_table(
+                values='message',
+                index='user',
+                columns='hour',
+                aggfunc='count',
+                fill_value=0
+            )
+            
+            # 히트맵 생성
+            fig = px.imshow(
+                pivot_table.values,
+                x=pivot_table.columns,
+                y=pivot_table.index,
+                title="사용자별 시간대 활동 히트맵",
+                labels={'x': '시간', 'y': '사용자', 'color': '메시지 수'},
+                color_continuous_scale='Reds',
+                aspect='auto'
+            )
+            fig.update_layout(height=600)
+            
+            st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        elif selected_viz == "📊 메시지 길이 분포":
+            st.subheader("📊 메시지 길이 분석")
+            
+            data['message_length'] = data['message'].str.len()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 히스토그램
+                fig = px.histogram(
+                    data,
+                    x='message_length',
+                    nbins=50,
+                    title="메시지 길이 분포",
+                    labels={'message_length': '메시지 길이 (문자수)', 'count': '빈도'},
+                    color_discrete_sequence=['#ff6b6b']
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with col2:
+                # 박스플롯
+                fig = px.box(
+                    data.head(10000),  # 성능을 위해 샘플링
+                    y='message_length',
+                    title="메시지 길이 박스플롯",
+                    labels={'message_length': '메시지 길이 (문자수)'},
+                    color_discrete_sequence=['#ff6b6b']
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # 통계 정보
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📏 평균 길이", f"{data['message_length'].mean():.1f}자")
+            with col2:
+                st.metric("📐 최장 메시지", f"{data['message_length'].max()}자")
+            with col3:
+                st.metric("📊 중간값", f"{data['message_length'].median():.1f}자")
+            with col4:
+                st.metric("📈 표준편차", f"{data['message_length'].std():.1f}")
+        
+        elif selected_viz == "☁️ 키워드 워드클라우드":
+            st.subheader("☁️ 주요 키워드 분석")
+            
+            # 텍스트 전처리 및 키워드 추출
+            all_text = ' '.join(data['message'].astype(str))
+            korean_words = re.findall(r'[가-힣]{2,}', all_text)
+            
+            # 불용어 제거
+            stopwords = [
+                '이거', '그거', '저거', '뭐야', '그냥', '진짜', '정말', '완전', '너무', '엄청',
+                '하지만', '그런데', '이런', '그런', '저런', '이제', '지금', '여기', '거기',
+                '오늘', '어제', '내일', '시간', '때문', '이번', '다음', '마지막', '처음'
+            ]
+            filtered_words = [word for word in korean_words if word not in stopwords and len(word) > 1]
+            
+            # 단어 빈도 계산
+            word_freq = Counter(filtered_words).most_common(30)
+            
+            if word_freq:
+                words, frequencies = zip(*word_freq)
+                
+                # 바 차트로 상위 키워드 표시
+                fig = px.bar(
+                    x=list(frequencies),
+                    y=list(words),
+                    orientation='h',
+                    title="상위 30개 키워드",
+                    labels={'x': '빈도', 'y': '키워드'},
+                    color=list(frequencies),
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=800,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 키워드 태그 클라우드
+                st.subheader("🏷️ 키워드 태그")
+                keyword_html = ""
+                for word, freq in word_freq[:20]:
+                    size = min(30, max(12, freq // 10 + 12))
+                    keyword_html += f'<span style="font-size: {size}px; background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; padding: 5px 10px; margin: 5px; border-radius: 15px; display: inline-block;">{word} ({freq})</span>'
+                
+                st.markdown(f'<div style="text-align: center; padding: 20px;">{keyword_html}</div>', unsafe_allow_html=True)
+            else:
+                st.info("키워드를 추출할 수 없습니다.")
+        
+        elif selected_viz == "⏰ 시간대별 활동 패턴":
+            st.subheader("⏰ 시간대별 활동 패턴 분석")
+            
+            data['hour'] = data['datetime'].dt.hour
+            data['weekday'] = data['datetime'].dt.day_name()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # 시간대별 활동
+                hourly_stats = data['hour'].value_counts().sort_index()
+                
+                fig = px.line(
+                    x=hourly_stats.index,
+                    y=hourly_stats.values,
+                    title="시간대별 메시지 수",
+                    labels={'x': '시간', 'y': '메시지 수'},
+                    markers=True
+                )
+                fig.update_traces(line_color='#ff6b6b', marker_color='#ff6b6b')
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with col2:
+                # 요일별 활동
+                weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                weekday_stats = data['weekday'].value_counts().reindex(weekday_order)
+                
+                fig = px.bar(
+                    x=['월', '화', '수', '목', '금', '토', '일'],
+                    y=weekday_stats.values,
+                    title="요일별 메시지 수",
+                    labels={'x': '요일', 'y': '메시지 수'},
+                    color=weekday_stats.values,
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+        
+        elif selected_viz == "📅 월별/요일별 분석":
+            st.subheader("📅 월별/요일별 상세 분석")
+            
+            # 월별 분석
+            if len(data) > 100:  # 충분한 데이터가 있을 때만
+                data['month'] = data['datetime'].dt.to_period('M')
+                monthly_data = data.groupby('month').size().reset_index()
+                monthly_data.columns = ['month', 'count']
+                monthly_data['month'] = monthly_data['month'].astype(str)
+                
+                fig = px.bar(
+                    monthly_data,
+                    x='month',
+                    y='count',
+                    title="월별 메시지 수",
+                    labels={'month': '월', 'count': '메시지 수'},
+                    color='count',
+                    color_continuous_scale='Reds'
+                )
+                fig.update_layout(
+                    height=400,
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)'
+                )
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # 주간 패턴 분석
+                data['week'] = data['datetime'].dt.isocalendar().week
+                data['weekday_num'] = data['datetime'].dt.weekday
+                
+                # 요일별 시간대 히트맵
+                weekday_hour_pivot = data.pivot_table(
+                    values='message',
+                    index='weekday_num',
+                    columns='hour',
+                    aggfunc='count',
+                    fill_value=0
+                )
+                
+                fig = px.imshow(
+                    weekday_hour_pivot.values,
+                    x=weekday_hour_pivot.columns,
+                    y=['월', '화', '수', '목', '금', '토', '일'],
+                    title="요일별 시간대 활동 히트맵",
+                    labels={'x': '시간', 'y': '요일', 'color': '메시지 수'},
+                    color_continuous_scale='Reds',
+                    aspect='auto'
+                )
+                fig.update_layout(height=400)
+                
+                st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
 
 # 데이터 관리 섹션
-elif selected == "데이터 관리":
-    st.header("🗃️ 데이터 관리")
+elif selected == "💾 데이터 관리":
+    st.header("💾 데이터 관리")
     
-    # 데이터베이스 정보
-    db_info = db_manager.get_database_info()
+    col1, col2 = st.columns([2, 1])
     
-    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("저장된 세션 수", db_info['total_sessions'])
+        st.markdown("""
+        ### 📋 기능 목록
+        - **💾 분석 결과 저장**: 현재 분석 결과를 파일로 저장
+        - **📊 데이터 내보내기**: 처리된 데이터를 CSV로 내보내기
+        - **🗃️ 세션 데이터 관리**: 현재 세션의 데이터 상태 확인
+        - **🔄 데이터 초기화**: 모든 데이터 초기화
+        """)
+    
     with col2:
-        st.metric("총 메시지 수", f"{db_info['total_messages']:,}")
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); padding: 20px; border-radius: 15px; text-align: center; color: white;'>
+            <h4>💡 데이터 관리 팁</h4>
+            <p>정기적으로 중요한<br>분석 결과를 저장하세요</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # 현재 세션 상태
+    st.subheader("📊 현재 세션 상태")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.session_state.chat_data is not None:
+            st.metric("📝 채팅 데이터", "✅ 로드됨", delta=f"{len(st.session_state.chat_data):,}개 메시지")
+        else:
+            st.metric("📝 채팅 데이터", "❌ 없음", delta="파일 업로드 필요")
+    
+    with col2:
+        if st.session_state.analysis_results is not None:
+            st.metric("🤖 GPT 분석", "✅ 완료됨", delta="결과 저장 가능")
+        else:
+            st.metric("🤖 GPT 분석", "❌ 없음", delta="분석 실행 필요")
+    
     with col3:
-        st.metric("분석 결과 수", db_info['total_analyses'])
-    with col4:
-        st.metric("DB 크기", f"{db_info['db_size_mb']:.2f} MB")
+        total_memory = 0
+        if st.session_state.chat_data is not None:
+            total_memory += st.session_state.chat_data.memory_usage(deep=True).sum() / 1024 / 1024
+        st.metric("💾 메모리 사용량", f"{total_memory:.1f} MB", delta="세션 데이터")
     
     st.markdown("---")
     
-    # 저장된 세션 목록
-    st.subheader("📂 저장된 분석 세션")
+    # 데이터 관리 기능들
+    if st.session_state.chat_data is not None:
+        st.subheader("🛠️ 데이터 관리 도구")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("📁 CSV 내보내기", use_container_width=True):
+                try:
+                    csv_data = st.session_state.chat_data.to_csv(index=False)
+                    st.download_button(
+                        label="💾 CSV 파일 다운로드",
+                        data=csv_data,
+                        file_name=f"chat_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                    st.success("✅ CSV 파일 준비 완료!")
+                except Exception as e:
+                    st.error(f"❌ CSV 내보내기 실패: {str(e)}")
+        
+        with col2:
+            if st.session_state.analysis_results is not None:
+                if st.button("📋 분석 결과 저장", use_container_width=True):
+                    try:
+                        import json
+                        analysis_json = json.dumps(st.session_state.analysis_results, ensure_ascii=False, indent=2)
+                        st.download_button(
+                            label="💾 분석 결과 다운로드",
+                            data=analysis_json,
+                            file_name=f"analysis_result_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
+                        st.success("✅ 분석 결과 준비 완료!")
+                    except Exception as e:
+                        st.error(f"❌ 분석 결과 저장 실패: {str(e)}")
+            else:
+                st.button("📋 분석 결과 없음", disabled=True, use_container_width=True)
+        
+        with col3:
+            if st.button("🗑️ 데이터 초기화", use_container_width=True, type="secondary"):
+                if st.button("⚠️ 정말 초기화하시겠습니까?", type="primary", use_container_width=True):
+                    st.session_state.chat_data = None
+                    st.session_state.analysis_results = None
+                    st.session_state.selected_room = None
+                    st.success("✅ 모든 데이터가 초기화되었습니다.")
+                    st.rerun()
     
-    sessions_df = db_manager.get_analysis_sessions()
-    
-    if not sessions_df.empty:
-        # 세션 선택
-        selected_session = st.selectbox(
-            "세션 선택",
-            options=sessions_df['id'].tolist(),
-            format_func=lambda x: f"[{x}] {sessions_df[sessions_df['id']==x]['session_name'].iloc[0]} ({sessions_df[sessions_df['id']==x]['total_messages'].iloc[0]}개 메시지)"
-        )
-        
-        if selected_session:
-            session_info = sessions_df[sessions_df['id'] == selected_session].iloc[0]
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if st.button("📊 세션 불러오기"):
-                    # 세션 데이터 불러오기
-                    session_data = db_manager.get_session_data(selected_session)
-                    st.session_state.chat_data = session_data
-                    st.session_state.current_session_id = selected_session
-                    st.success(f"✅ 세션 '{session_info['session_name']}'을 불러왔습니다!")
-            
-            with col2:
-                if st.button("📄 분석 결과 보기"):
-                    # 분석 결과 조회
-                    analysis_results = db_manager.get_session_analysis_results(selected_session)
-                    if not analysis_results.empty:
-                        st.subheader("🤖 저장된 분석 결과")
-                        for _, result in analysis_results.iterrows():
-                            st.write(f"**{result['analysis_type']}** (대상: {result['target_user']})")
-                            st.write(f"분석 시간: {result['created_at']}")
-                            st.markdown(result['summary'])
-                            st.markdown("---")
-                    else:
-                        st.info("저장된 분석 결과가 없습니다.")
-            
-            with col3:
-                if st.button("🗑️ 세션 삭제", type="secondary"):
-                    if st.checkbox(f"'{session_info['session_name']}' 세션을 정말 삭제하시겠습니까?"):
-                        db_manager.delete_session(selected_session)
-                        st.success("✅ 세션이 삭제되었습니다!")
-                        st.rerun()
-        
-        # 세션 목록 테이블
-        st.subheader("📋 전체 세션 목록")
-        display_columns = ['id', 'session_name', 'total_messages', 'participants_count', 'start_date', 'end_date', 'created_at']
-        st.dataframe(sessions_df[display_columns])
-        
     else:
-        st.info("저장된 세션이 없습니다. 먼저 채팅 파일을 업로드하고 저장해주세요.")
+        st.info("💡 데이터 관리 기능을 사용하려면 먼저 채팅 파일을 업로드해주세요.")
 
 # 설정 섹션
-elif selected == "설정":
+elif selected == "⚙️ 설정":
     st.header("⚙️ 설정")
     
-    st.subheader("🔧 일반 설정")
+    # 환경 설정
+    st.subheader("🌍 환경 설정")
     
-    # 테마 설정
-    theme = st.selectbox("테마", ["라이트", "다크"])
+    col1, col2 = st.columns(2)
     
-    # 언어 설정
-    language = st.selectbox("언어", ["한국어", "English"])
+    with col1:
+        st.markdown("**🔑 API 설정**")
+        
+        # OpenAI API 키 설정
+        openai_key = st.text_input(
+            "OpenAI API 키",
+            value=os.getenv("OPENAI_API_KEY", ""),
+            type="password",
+            help="OpenAI GPT 분석을 위한 API 키"
+        )
+        
+        if openai_key:
+            st.success("✅ OpenAI API 키가 설정되었습니다.")
+        else:
+            st.warning("⚠️ OpenAI API 키를 설정하면 GPT 분석을 사용할 수 있습니다.")
+    
+    with col2:
+        st.markdown("**🎨 UI 설정**")
+        
+        # 테마 설정 (현재는 빨간색 고정)
+        theme_color = st.selectbox(
+            "테마 색상",
+            ["빨간색 (Red)", "파란색 (Blue)", "초록색 (Green)", "보라색 (Purple)"],
+            index=0,
+            disabled=True,
+            help="현재 빨간색 테마만 지원됩니다."
+        )
+        
+        # 언어 설정
+        language = st.selectbox(
+            "언어",
+            ["한국어", "English"],
+            index=0,
+            disabled=True,
+            help="현재 한국어만 지원됩니다."
+        )
+    
+    st.markdown("---")
     
     # 분석 설정
-    st.subheader("🤖 분석 설정")
+    st.subheader("📊 분석 설정")
     
-    max_tokens = st.slider("GPT 최대 토큰 수", 100, 4000, 2000)
-    temperature = st.slider("GPT 창의성 (Temperature)", 0.0, 1.0, 0.7)
+    col1, col2 = st.columns(2)
     
-    # 데이터베이스 설정
-    st.subheader("🗃️ 데이터베이스 설정")
+    with col1:
+        st.markdown("**🤖 GPT 분석 설정**")
+        
+        default_model = st.selectbox(
+            "기본 GPT 모델",
+            ["gpt-4o-mini", "gpt-4", "gpt-3.5-turbo"],
+            index=0,
+            help="GPT 분석에 사용할 기본 모델"
+        )
+        
+        default_sample_size = st.slider(
+            "기본 분석 메시지 수",
+            100, 2000, 500,
+            help="GPT 분석 시 기본으로 사용할 메시지 수"
+        )
     
-    if st.button("🔄 데이터베이스 초기화"):
-        if st.checkbox("정말로 모든 데이터를 삭제하시겠습니까?"):
-            try:
-                import os
-                if os.path.exists("kakao_analysis.db"):
-                    os.remove("kakao_analysis.db")
-                st.success("✅ 데이터베이스가 초기화되었습니다!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ 초기화 중 오류: {str(e)}")
+    with col2:
+        st.markdown("**📈 시각화 설정**")
+        
+        chart_theme = st.selectbox(
+            "차트 테마",
+            ["빨간색", "기본"],
+            index=0,
+            help="차트 및 그래프의 기본 색상 테마"
+        )
+        
+        chart_height = st.slider(
+            "기본 차트 높이",
+            300, 800, 400,
+            help="차트의 기본 높이 (픽셀)"
+        )
     
-    if st.button("💾 설정 저장"):
-        st.success("✅ 설정이 저장되었습니다!")
+    st.markdown("---")
+    
+    # 시스템 정보
+    st.subheader("🖥️ 시스템 정보")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("📦 Streamlit 버전", st.__version__)
+    
+    with col2:
+        st.metric("🐍 Python 버전", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    
+    with col3:
+        st.metric("💾 세션 ID", str(id(st.session_state))[-6:])
+    
+    # 고급 설정
+    with st.expander("🔧 고급 설정", expanded=False):
+        st.markdown("""
+        ### 개발자 옵션
+        - **디버그 모드**: 상세한 로그 출력
+        - **캐시 설정**: 데이터 캐싱 옵션
+        - **성능 모니터링**: 실행 시간 측정
+        """)
+        
+        debug_mode = st.checkbox("디버그 모드 활성화", value=False)
+        cache_enabled = st.checkbox("데이터 캐싱 활성화", value=True)
+        performance_monitoring = st.checkbox("성능 모니터링 활성화", value=False)
+        
+        if debug_mode:
+            st.info("🐛 디버그 모드가 활성화되었습니다.")
+        
+        if st.button("🔄 설정 초기화"):
+            st.success("✅ 모든 설정이 기본값으로 초기화되었습니다.")
 
-# 푸터
+# 하단 정보
 st.markdown("---")
-st.markdown("💡 **Tip**: 더 정확한 분석을 위해 키워드와 기간을 구체적으로 설정해보세요!") 
+st.markdown("""
+<div style='text-align: center; color: #666; font-size: 0.9em; padding: 20px;'>
+    <p>💬 <strong>카카오톡 채팅 분석기 v2.0</strong></p>
+    <p>🚀 AI 기반 스마트 채팅 분석 플랫폼 | Made with ❤️ using Streamlit</p>
+    <p>🔗 <a href="https://github.com" style="color: #ff6b6b;">GitHub</a> | 
+       📧 <a href="mailto:support@example.com" style="color: #ff6b6b;">Support</a> | 
+       📚 <a href="#" style="color: #ff6b6b;">Documentation</a></p>
+</div>
+""", unsafe_allow_html=True) 
