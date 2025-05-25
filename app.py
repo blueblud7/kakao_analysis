@@ -1285,9 +1285,9 @@ elif selected == "⚙️ 설정":
         
         default_model = st.selectbox(
             "기본 GPT 모델",
-            ["gpt-4o-mini", "gpt-4", "gpt-3.5-turbo"],
+            ["gpt-4o-mini"],
             index=0,
-            help="GPT 분석에 사용할 기본 모델"
+            help="GPT 분석에 사용할 기본 모델 (gpt-4o-mini 고정)"
         )
         
         default_sample_size = st.slider(
